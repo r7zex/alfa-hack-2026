@@ -1,8 +1,10 @@
 """ASGI entrypoint. Product routers will be included here as they are built."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -39,3 +41,12 @@ async def ready() -> dict[str, str]:
             status_code=503, detail="Database is unavailable"
         ) from exc
     return {"status": "ready", "database": "connected"}
+
+
+# Keep this mount after API routes so /health, /ready and future routers win.
+# HTML mode serves index.html at /; relative CSS and module URLs stay valid.
+app.mount(
+    "/",
+    StaticFiles(directory=Path(__file__).resolve().parent / "static", html=True),
+    name="frontend",
+)
