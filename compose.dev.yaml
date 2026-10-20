@@ -1,0 +1,7 @@
+# Optional override ONLY for local FastAPI running in PyCharm.
+# Use with: docker compose -f compose.yaml -f compose.dev.yaml up -d db
+# Do NOT include this file for jury or VPS runs.
+services:
+  db:
+    ports:
+      - "127.0.0.1:${DB_PORT:-15432}:5432"

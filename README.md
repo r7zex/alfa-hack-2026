@@ -17,7 +17,7 @@
 
 ## Проверка жюри: полностью в Docker
 
-Нужны только Docker Engine/Desktop с Docker Compose и свободные порты 8000, 5432.
+Нужны Docker Engine/Desktop с Docker Compose и свободный порт 8000. PostgreSQL не публикуется на хост.
 
 ```bash
 cp .env.example .env
@@ -37,28 +37,88 @@ Swagger: http://127.0.0.1:8000/docs
 Остановка без удаления данных: `docker compose down`.
 **Внимание:** `docker compose down -v` удаляет volume PostgreSQL и данные.
 
-Если на хосте заняты порты, поменяйте `APP_PORT` или `DB_PORT` в `.env`.
+Если на хосте занят порт FastAPI, поменяйте `APP_PORT` в `.env`.
 При изменении `APP_PORT` поменяйте порт в URL для проверки.
 
-## Разработка в PyCharm: FastAPI на хосте, БД в Docker
+## Разработка в PyCharm: FastAPI локально, PostgreSQL в Docker
 
-Для Python 3.12:
+Локально можно использовать уже установленный Python 3.13. Однако в образе
+для жюри используется Python 3.12; итоговый код и ML-модели обязательно
+проверяем также в контейнере на Python 3.12.
+
+### 1. Настройка интерпретатора и зависимостей
+
+В PyCharm: Settings → Python → Interpreter → Add Interpreter →
+Add Local Interpreter → Virtualenv. Выберите Python 3.13 и путь
+`.venv` в корне репозитория. В терминале проекта:
 
 ```bash
-cp .env.example .env
-docker compose up -d db
-python3.12 -m venv .venv
 source .venv/bin/activate
+python --version
 python -m pip install -r requirements-dev.txt
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-`.env` читается локально через pydantic-settings; `DB_HOST=127.0.0.1`.
-При запуске через Compose `DB_HOST` автоматически заменяется на `db`,
-так как приложение и БД находятся в одной Docker-сети.
+Вместо PyCharm можно создать `.venv` командой `python3.13 -m venv .venv`.
+Не устанавливайте зависимости в системный Python.
 
-Остановите локальный Uvicorn перед `docker compose up -d app`, иначе
-оба процесса будут пытаться занять порт 8000.
+### 2. Запуск PostgreSQL
+
+Если `.env` отсутствует: `cp .env.example .env`.
+Не перезаписывайте свой существующий `.env`. Для локального режима
+убедитесь, что в нём `DB_HOST=127.0.0.1` и `DB_PORT=15432`.
+Если порт 15432 занят, выберите свободный порт, изменив `DB_PORT` в `.env`.
+Проверьте занятость порта, например командой:
+
+```bash
+lsof -nP -iTCP:15432 -sTCP:LISTEN
+```
+
+Если ранее запускали FastAPI в Docker, сначала освободите порт 8000:
+
+```bash
+docker compose stop app
+```
+
+Запустите только базу с dev override:
+
+```bash
+docker compose -f compose.yaml -f compose.dev.yaml up -d db
+docker compose -f compose.yaml -f compose.dev.yaml ps
+```
+
+В этом режиме PostgreSQL открывает *только* `127.0.0.1:15432`
+(или выбранный в `.env` порт). Контейнерный порт остаётся 5432.
+На VPS и для жюри **не используем** `compose.dev.yaml`: в основном
+Compose PostgreSQL вообще не имеет опубликованного порта.
+
+### 3. Запуск FastAPI без Docker
+
+В активированном виртуальном окружении:
+
+```bash
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Либо настройте PyCharm → Run → Edit Configurations → Add New → Python:
+
+- Interpreter: `.venv/bin/python`.
+- Run: `Module name` → `uvicorn`.
+- Parameters: `app.main:app --reload --host 127.0.0.1 --port 8000`.
+- Working directory: корень `alfa-hack-2026`.
+
+Сам FastAPI читает `.env` через pydantic-settings. При изменении Python-кода
+Uvicorn автоматически перезапускает приложение без пересборки Docker.
+Для стабильной работы брейкпоинтов при Debug можно убрать `--reload`.
+
+Проверка:
+
+```bash
+curl -fsS http://127.0.0.1:8000/health
+curl -fsS http://127.0.0.1:8000/ready
+```
+
+Чтобы вернуться к полностью контейнерному запуску, остановите локальный
+Uvicorn и выполните `docker compose up --build -d` **без dev override**.
 
 ## Тесты
 
@@ -80,8 +140,8 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-По умолчанию порты **FastAPI и PostgreSQL привязаны к 127.0.0.1**
-и не выставляются в интернет. Чтобы открыть сайт извне, настройте
+По умолчанию **FastAPI привязан к 127.0.0.1**, а PostgreSQL
+вообще не публикуется на хост. Чтобы открыть сайт извне, настройте
 на VPS HTTPS reverse proxy (например, Caddy или Nginx), который
 проксирует запросы к `127.0.0.1:8000`. Не публикуйте порт БД.
 Используйте firewall, защищённые секреты и резервное копирование volume.
