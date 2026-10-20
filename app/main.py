@@ -4,11 +4,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import engine
+from app.frontend import FrontendFiles
 
 
 @asynccontextmanager
@@ -47,6 +47,6 @@ async def ready() -> dict[str, str]:
 # HTML mode serves index.html at /; relative CSS and module URLs stay valid.
 app.mount(
     "/",
-    StaticFiles(directory=Path(__file__).resolve().parent / "static", html=True),
+    FrontendFiles(directory=Path(__file__).resolve().parent / "static", html=True),
     name="frontend",
 )

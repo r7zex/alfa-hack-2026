@@ -159,6 +159,13 @@ export function wizardBack() {
   wizard.step = Math.max(0, wizard.step - 1);
   renderWizard();
 }
+function showSavedApplication(id) {
+  const target = "#/applications/" + id;
+  if (location.hash === target) {
+    // Updating an existing draft does not cause a hashchange event.
+    window.dispatchEvent(new Event("delora:refresh"));
+  } else location.hash = target;
+}
 export function wizardNext() {
   captureWizard();
   const error = validateStep();
@@ -191,7 +198,7 @@ export function wizardNext() {
   );
   closeModal();
   wizard = null;
-  location.hash = "/applications/" + id;
+  showSavedApplication(id);
   toast("Заявка отправлена. Следите за статусом в кабинете.");
 }
 export function saveDraft() {
@@ -199,6 +206,6 @@ export function saveDraft() {
   const id = saveApplication(wizard.values, false);
   closeModal();
   wizard = null;
-  location.hash = "/applications/" + id;
+  showSavedApplication(id);
   toast("Черновик сохранён");
 }

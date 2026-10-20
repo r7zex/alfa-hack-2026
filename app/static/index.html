@@ -13,8 +13,76 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <main class="startup-screen" id="startup-state" aria-live="polite">
+        <p class="startup-brand">делора</p>
+        <h1 id="startup-title">Открываем кабинет</h1>
+        <p id="startup-message">
+          Загружаем интерфейс. Если загрузка не завершится, обновите страницу.
+        </p>
+        <details id="startup-details" hidden>
+          <summary>Подробности ошибки</summary>
+          <pre id="startup-error"></pre>
+        </details>
+        <a class="button secondary" href="./">Обновить страницу</a>
+      </main>
+    </div>
+    <noscript>
+      <style>
+        #startup-state {
+          display: none;
+        }
+      </style>
+      <main class="startup-screen">
+        <h1>Для работы кабинета нужен JavaScript</h1>
+        <p>Разрешите JavaScript для этого сайта и обновите страницу.</p>
+      </main>
+    </noscript>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js"></script>
+    <script>
+      (function () {
+        var root = document.getElementById("app");
+        var screen = document.getElementById("startup-state");
+        function failed(message, error) {
+          if (!screen.isConnected) return;
+          document.getElementById("startup-title").textContent =
+            "Не удалось загрузить кабинет";
+          document.getElementById("startup-message").textContent = message;
+          if (error) {
+            document.getElementById("startup-details").hidden = false;
+            document.getElementById("startup-error").textContent =
+              error.message || String(error);
+          }
+        }
+        if (location.protocol === "file:") {
+          failed(
+            "Откройте сайт через http://127.0.0.1:8000/, запустив сервер из папки проекта. Файл index.html нельзя открывать двойным щелчком.",
+          );
+          return;
+        }
+        var timeout = setTimeout(function () {
+          failed(
+            "Загрузка занимает слишком много времени. Проверьте, что локальный сервер запущен, затем нажмите Ctrl+F5.",
+          );
+        }, 15000);
+        import("./app.js")
+          .then(function () {
+            clearTimeout(timeout);
+            if (screen.isConnected || !root.hasChildNodes()) {
+              failed(
+                "Интерфейс не завершил запуск. Обновите страницу сочетанием Ctrl+F5.",
+              );
+            }
+          })
+          .catch(function (error) {
+            clearTimeout(timeout);
+            failed(
+              "Не удалось загрузить JavaScript. Обновите код из Git и перезапустите сервер, затем нажмите Ctrl+F5.",
+              error,
+            );
+            console.error("Delora startup failed:", error);
+          });
+      })();
+    </script>
   </body>
 </html>

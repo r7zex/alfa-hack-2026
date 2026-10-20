@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { safeStorage, cloneData, makeId } from "../app/static/js/runtime.mjs";
 import {
   PRODUCTS,
   documentTypes,
@@ -55,6 +56,60 @@ test("user content is escaped before HTML interpolation", () => {
     escape('<img src=x onerror="alert(1)">'),
     "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;",
   );
+});
+test("blocked browser storage uses memory without throwing", () => {
+  const storage = safeStorage(() => {
+    throw new Error("Storage blocked");
+  });
+  assert.equal(storage.getItem("demo"), null);
+  storage.setItem("demo", "saved");
+  assert.equal(storage.getItem("demo"), "saved");
+  storage.removeItem("demo");
+  assert.equal(storage.getItem("demo"), null);
+});
+test("storage quota failure retains previously read data for this page", () => {
+  const storage = safeStorage(() => ({
+    getItem: () => "existing",
+    setItem: () => {
+      throw new Error("Quota exceeded");
+    },
+  }));
+  assert.equal(storage.getItem("old"), "existing");
+  storage.setItem("new", "temporary");
+  assert.equal(storage.getItem("old"), "existing");
+  assert.equal(storage.getItem("new"), "temporary");
+});
+test("JSON demo state can be cloned when structuredClone is unavailable", () => {
+  const original = globalThis.structuredClone;
+  try {
+    globalThis.structuredClone = undefined;
+    const data = { profile: { type: "ip" }, values: [1, 2] };
+    const copy = cloneData(data);
+    assert.deepEqual(copy, data);
+    copy.profile.type = "llc";
+    assert.equal(data.profile.type, "ip");
+  } finally {
+    globalThis.structuredClone = original;
+  }
+});
+test("UUID creation works without the secure-context randomUUID method", () => {
+  const original = globalThis.crypto;
+  try {
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: { getRandomValues: original.getRandomValues.bind(original) },
+    });
+    assert.match(
+      makeId(),
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    assert.notEqual(makeId(), makeId());
+  } finally {
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: original,
+    });
+  }
 });
 test("demo repository preserves ownership and rejects repeated decisions or acceptances", async () => {
   const data = new Map(),

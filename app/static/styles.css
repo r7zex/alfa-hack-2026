@@ -1,4 +1,35 @@
 @charset "UTF-8";
+.startup-screen {
+  width: calc(100% - 40px);
+  max-width: 640px;
+  margin: 12vh auto;
+  padding: 32px;
+  background: #fff;
+  border: 1px solid #e3e7ed;
+  border-radius: 14px;
+}
+.startup-screen h1 {
+  font-size: 28px;
+}
+.startup-screen p {
+  margin: 18px 0;
+}
+.startup-brand {
+  color: #ef3124;
+  font-size: 25px;
+  font-weight: 700;
+}
+.startup-screen details {
+  margin: 20px 0;
+}
+.startup-screen pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.storage-notice {
+  margin-bottom: 18px;
+}
 :root {
   --red: #ef3124;
   --red-dark: #cf251b;

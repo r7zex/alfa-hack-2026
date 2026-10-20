@@ -42,8 +42,19 @@ import {
   saveDraft,
 } from "./js/forms.mjs";
 import { analyst, analystRows } from "./js/analyst.mjs";
+import { makeId, storageIsTemporary } from "./js/runtime.mjs";
 
 const root = document.getElementById("app");
+function showStorageNotice() {
+  if (!storageIsTemporary()) return;
+  const target = root.querySelector(".auth-form-wrap, .main-content");
+  if (!target) return;
+  const notice = document.createElement("p");
+  notice.className = "notice storage-notice";
+  notice.textContent =
+    "Временный режим: браузер не разрешил сохранить данные. Изменения будут доступны до обновления страницы.";
+  target.prepend(notice);
+}
 function route() {
   const [path, query = ""] = (
     location.hash.replace(/^#\/?/, "") || "home"
@@ -68,6 +79,7 @@ function render() {
     if (!admin && !user) {
       root.innerHTML = auth();
       document.title = "Делора - вход в кабинет";
+      showStorageNotice();
       return;
     }
     const { parts, params } = route();
@@ -88,6 +100,7 @@ function render() {
       content = home(user);
     }
     root.innerHTML = shell(content, user, section, admin);
+    showStorageNotice();
     document.title =
       "Делора - " +
       {
@@ -102,8 +115,7 @@ function render() {
     if (section === "profile" && params.has("documents"))
       document.getElementById("documents")?.scrollIntoView({ block: "start" });
   } catch (error) {
-    root.innerHTML =
-      '<main class="startup-error"><h1>Не удалось открыть кабинет</h1><p>Разрешите хранение данных сайта в браузере и обновите страницу.</p><button class="button primary" data-action="reload">Обновить</button></main>';
+    root.innerHTML = `<main class="startup-screen"><h1>Не удалось открыть кабинет</h1><p>При запуске возникла ошибка. Обновите страницу сочетанием Ctrl+F5.</p><details><summary>Подробности ошибки</summary><pre>${e(error.message)}</pre></details><button class="button primary" data-action="reload">Обновить</button></main>`;
     toast(error.message, true);
   }
 }
@@ -196,7 +208,7 @@ document.addEventListener("submit", (event) => {
           throw Error(
             "Аккаунт с такой почтой или ИНН уже существует. Откройте вкладку входа.",
           );
-        const id = crypto.randomUUID();
+        const id = makeId();
         update((s) =>
           s.users.push({
             id,
@@ -319,6 +331,7 @@ document.addEventListener("change", async (event) => {
     input.value = "";
   }
 });
+window.addEventListener("delora:refresh", render);
 window.addEventListener("hashchange", () => {
   render();
   if (!route().params.has("documents")) window.scrollTo({ top: 0 });

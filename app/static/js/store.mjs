@@ -1,4 +1,5 @@
 // Browser-only demo repository. Replace this boundary with the authenticated API.
+import { localData, sessionData, cloneData, makeId } from "./runtime.mjs";
 const KEY = "delora.demo.v1";
 const SESSION_KEY = "delora.session.v1";
 const demoInn = (prefix, type) => {
@@ -140,7 +141,7 @@ function seed() {
 let state;
 export function getState() {
   if (state) return state;
-  const raw = localStorage.getItem(KEY);
+  const raw = localData.getItem(KEY);
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
@@ -162,11 +163,11 @@ export function getState() {
   return state;
 }
 function persist(next) {
-  localStorage.setItem(KEY, JSON.stringify(next));
+  localData.setItem(KEY, JSON.stringify(next));
   state = next;
 }
 export function update(mutator) {
-  const next = structuredClone(getState());
+  const next = cloneData(getState());
   mutator(next);
   persist(next);
 }
@@ -175,16 +176,16 @@ export function invalidate() {
 }
 export function session() {
   try {
-    return JSON.parse(sessionStorage.getItem(SESSION_KEY)) || null;
+    return JSON.parse(sessionData.getItem(SESSION_KEY)) || null;
   } catch {
     return null;
   }
 }
 export function login(id) {
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify({ id }));
+  sessionData.setItem(SESSION_KEY, JSON.stringify({ id }));
 }
 export function logout() {
-  sessionStorage.removeItem(SESSION_KEY);
+  sessionData.removeItem(SESSION_KEY);
 }
 export const currentUser = () =>
   getState().users.find((u) => u.id === session()?.id);
@@ -208,13 +209,13 @@ export function saveApplication(input, submit) {
       "DL-" +
         new Date().getFullYear() +
         "-" +
-        crypto.randomUUID().slice(0, 8).toUpperCase();
+        makeId().slice(0, 8).toUpperCase();
     const at = new Date().toISOString();
     const value = {
       ...input,
       id,
       ownerId: owner.id,
-      profile: structuredClone(owner),
+      profile: cloneData(owner),
       status: submit ? "pending" : "draft",
       createdAt: existing?.createdAt || at,
       updatedAt: at,
@@ -319,7 +320,7 @@ export async function addDocument(file, type) {
   )
     throw Error("Расширение файла не соответствует содержимому");
   const doc = {
-    id: crypto.randomUUID(),
+    id: makeId(),
     ownerId: currentUser().id,
     type,
     name: file.name,
