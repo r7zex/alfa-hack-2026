@@ -43,7 +43,7 @@ class ApplicationService:
             raise HTTPException(status_code=409, detail="Only drafts can be changed")
         changes = payload.model_dump(exclude_unset=True)
         # Explicit null is supported only for optional financial/text fields.
-        for required in ("product_id", "amount", "months"):
+        for required in ("product_id", "amount", "months", "current_step"):
             if required in changes and changes[required] is None:
                 raise HTTPException(status_code=422, detail=f"{required} cannot be null")
         check_terms(

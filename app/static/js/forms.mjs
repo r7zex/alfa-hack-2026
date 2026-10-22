@@ -12,6 +12,8 @@ import {
   ownApplications,
   currentUser,
   saveApplication,
+  syncDraft,
+  submitDraft,
 } from "./store.mjs";
 import { brand, icon, button, field, modal, closeModal, toast } from "./ui.mjs";
 let authMode = "register",
@@ -52,7 +54,7 @@ export function startWizard(options = {}) {
     : null;
   const p = productById(options.productId || source?.productId);
   wizard = {
-    step: 0,
+    step: options.revise ? 0 : Math.min(3, Math.max(0, source?.currentStep ?? 0)),
     values: {
       productId: p.id,
       amount: options.amount || 1000000,
@@ -155,10 +157,11 @@ function validateStep() {
   }
   return "";
 }
-export function wizardBack() {
+export async function wizardBack() {
   captureWizard();
   wizard.step = Math.max(0, wizard.step - 1);
   renderWizard();
+  await autoSaveWizard();
 }
 function showSavedApplication(id) {
   const target = "#/applications/" + id;
@@ -167,7 +170,7 @@ function showSavedApplication(id) {
     window.dispatchEvent(new Event("delora:refresh"));
   } else location.hash = target;
 }
-export function wizardNext() {
+export async function wizardNext() {
   captureWizard();
   const error = validateStep();
   if (error) {
@@ -177,11 +180,13 @@ export function wizardNext() {
   if (wizard.step < 3) {
     wizard.step++;
     renderWizard();
+    await autoSaveWizard();
     return;
   }
   const form = document.getElementById("wizard-form");
   if (!form.reportValidity()) return;
-  const id = saveApplication(
+  const id = await submitDraft(
+    await autoSaveWizard(),
     {
       ...wizard.values,
       amount: +wizard.values.amount,
@@ -195,18 +200,40 @@ export function wizardNext() {
         at: new Date().toISOString(),
       },
     },
-    true,
   );
   closeModal();
   wizard = null;
   showSavedApplication(id);
   toast("Заявка отправлена. Следите за статусом в кабинете.");
 }
-export function saveDraft() {
+export async function saveDraft() {
   captureWizard();
-  const id = saveApplication(wizard.values, false);
+  const id = await autoSaveWizard();
   closeModal();
   wizard = null;
   showSavedApplication(id);
   toast("Черновик сохранён");
+}
+
+
+let autoSaveTimer;
+export function scheduleWizardAutoSave() {
+  if (!wizard || wizard.step === 3) return;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    autoSaveWizard().catch(error => toast(`Не удалось синхронизировать черновик: ${error.message}`, true));
+  }, 900);
+}
+export async function autoSaveWizard() {
+  clearTimeout(autoSaveTimer);
+  if (!wizard) return null;
+  captureWizard();
+  // A partially filled first step may not be a valid loan yet; don't create
+  // invalid server records. Values remain in the browser until they are valid.
+  if (validateLoan(wizard.values)) return wizard.values.id || null;
+  const values = { ...wizard.values, currentStep: wizard.step };
+  const localId = saveApplication(values, false);
+  const id = await syncDraft(localId);
+  if (wizard && (wizard.values.id === localId || !wizard.values.id)) wizard.values.id = id;
+  return id;
 }

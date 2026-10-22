@@ -2,6 +2,10 @@
 import asyncio
 import os
 from uuid import uuid4
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+from pydantic import ValidationError
 from unittest.mock import AsyncMock
 
 import pytest
@@ -13,7 +17,7 @@ os.environ.setdefault("DB_PASSWORD", "unit-test-only")
 from app.credit_products import PRODUCTS, validate_product_terms  # noqa: E402
 from app.main import app  # noqa: E402
 from app.services.application_service import ApplicationService  # noqa: E402
-from app.schemas.loan_application import ApplicationUpdate  # noqa: E402
+from app.schemas.loan_application import ApplicationCreate, ApplicationRead, ApplicationUpdate  # noqa: E402
 
 
 def test_catalogue_matches_frontend() -> None:
@@ -55,5 +59,49 @@ def test_only_draft_can_be_updated() -> None:
         with pytest.raises(HTTPException) as exc:
             await service.update(uuid4(), "demo-llc", ApplicationUpdate(amount=150_000))
         assert exc.value.status_code == 409
+
+    asyncio.run(check())
+
+
+def test_draft_step_accepts_camel_case_and_has_valid_bounds() -> None:
+    data = ApplicationCreate.model_validate({
+        "productId": "working", "amount": 1_000_000, "months": 12,
+        "currentStep": 2,
+    })
+    assert data.current_step == 2
+    assert ApplicationCreate(productId="working", amount=1_000_000, months=12).current_step == 0
+    with pytest.raises(ValidationError):
+        ApplicationCreate(productId="working", amount=1_000_000, months=12, currentStep=4)
+    with pytest.raises(ValidationError):
+        ApplicationUpdate(currentStep=-1)
+
+
+def test_response_serializes_current_step() -> None:
+    application = SimpleNamespace(
+        id=uuid4(), product_id="working", amount=1_000_000, months=12,
+        purpose=None, revenue=None, expenses=None, debt_payment=None,
+        current_step=2, status="draft",
+        created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc),
+    )
+    data = ApplicationRead.model_validate(application).model_dump(by_alias=True)
+    assert data["currentStep"] == 2
+    assert data["productId"] == "working"
+
+
+def test_can_save_step_and_refuses_null_step() -> None:
+    fake = SimpleNamespace(
+        status="draft", product_id="working", amount=1_000_000,
+        months=12, current_step=0,
+    )
+    service = ApplicationService(AsyncMock())
+    service.get = AsyncMock(return_value=fake)
+    service.repo.save = AsyncMock(side_effect=lambda application: application)
+
+    async def check() -> None:
+        result = await service.update(uuid4(), "demo-llc", ApplicationUpdate(currentStep=2))
+        assert result.current_step == 2
+        with pytest.raises(HTTPException) as exc:
+            await service.update(uuid4(), "demo-llc", ApplicationUpdate(currentStep=None))
+        assert exc.value.status_code == 422
 
     asyncio.run(check())

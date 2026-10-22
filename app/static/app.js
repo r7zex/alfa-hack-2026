@@ -17,6 +17,7 @@ import {
   readDocument,
   decide,
   acceptOffer,
+  restoreServerApplications,
 } from "./js/store.mjs";
 import { brand, icon, button, toast, closeModal } from "./js/ui.mjs";
 import {
@@ -40,6 +41,8 @@ import {
   wizardBack,
   wizardNext,
   saveDraft,
+  scheduleWizardAutoSave,
+  autoSaveWizard,
 } from "./js/forms.mjs";
 import { analyst, analystRows } from "./js/analyst.mjs";
 import { makeId, storageIsTemporary } from "./js/runtime.mjs";
@@ -126,6 +129,7 @@ function navigate(to) {
 function enter(id) {
   login(id);
   navigate(id === "admin" ? "current" : "home");
+  if (id !== "admin") restoreServerApplications().then(render).catch(error => toast(`Серверные заявки недоступны: ${error.message}`, true));
 }
 async function download(id) {
   const doc = getState().documents.find((d) => d.id === id);
@@ -160,10 +164,10 @@ document.addEventListener("click", async (event) => {
       logout();
       navigate("home");
     } else if (action === "new-application") startWizard();
-    else if (action === "close-modal") closeModal();
-    else if (action === "wizard-product") wizardProduct(id);
-    else if (action === "wizard-back") wizardBack();
-    else if (action === "save-draft") saveDraft();
+    else if (action === "close-modal") { if (getWizard()) await autoSaveWizard(); closeModal(); }
+    else if (action === "wizard-product") { wizardProduct(id); scheduleWizardAutoSave(); }
+    else if (action === "wizard-back") await wizardBack();
+    else if (action === "save-draft") await saveDraft();
     else if (action === "edit-application") startWizard({ id });
     else if (action === "revise-application") startWizard({ id, revise: true });
     else if (action === "download-document") await download(id);
@@ -176,7 +180,7 @@ document.addEventListener("click", async (event) => {
     toast(error.message, true);
   }
 });
-document.addEventListener("submit", (event) => {
+document.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.target;
   try {
@@ -232,7 +236,7 @@ document.addEventListener("submit", (event) => {
       const error = validateLoan({ ...data, productId });
       if (error) throw Error(error);
       startWizard({ productId, amount: +data.amount, months: +data.months });
-    } else if (form.id === "wizard-form") wizardNext();
+    } else if (form.id === "wizard-form") await wizardNext();
     else if (form.id === "profile-form") {
       if (!data.name.trim() || !data.contact.trim())
         throw Error("Заполните название и контактное лицо");
@@ -306,11 +310,13 @@ document.addEventListener("input", (event) => {
       document.getElementById("analyst-list").dataset.history === "true",
       input.value,
     );
+  if (input.closest("#wizard-form")) scheduleWizardAutoSave();
   if (input.closest(".decision-form") && input.name === "status")
     input.form.elements.comment.required = input.value === "rejected";
 });
 document.addEventListener("change", async (event) => {
   const input = event.target;
+  if (input.closest("#wizard-form") && !input.matches("[data-upload]")) scheduleWizardAutoSave();
   if (!input.matches("[data-upload]") || !input.files?.[0]) return;
   input.disabled = true;
   try {
@@ -323,6 +329,7 @@ document.addEventListener("change", async (event) => {
     ) {
       getWizard().values.documentIds.push(doc.id);
       renderWizard();
+      scheduleWizardAutoSave();
     } else render();
     toast("Документ сохранён в браузере");
   } catch (error) {
@@ -343,3 +350,7 @@ window.addEventListener("storage", (event) => {
   }
 });
 render();
+
+if (session()?.id && session().id !== "admin") {
+  restoreServerApplications().then(render).catch(error => toast(`Серверные заявки недоступны: ${error.message}`, true));
+}

@@ -1,8 +1,8 @@
 """Persisted loan application; financial values are whole roubles."""
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, Uuid, func
+from sqlalchemy import CheckConstraint, DateTime, Integer, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -28,6 +28,7 @@ class LoanApplication(Base):
     revenue: Mapped[int | None] = mapped_column(Integer, nullable=True)
     expenses: Mapped[int | None] = mapped_column(Integer, nullable=True)
     debt_payment: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_step: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
