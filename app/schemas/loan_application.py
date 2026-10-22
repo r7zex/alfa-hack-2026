@@ -22,8 +22,6 @@ class ApplicationUpdate(ApplicationCreate):
     product_id: str | None = Field(default=None, validation_alias=AliasChoices("productId", "product_id"))
     amount: int | None = Field(default=None, gt=0, le=1_000_000_000)
     months: int | None = Field(default=None, gt=0, le=120)
-
-
     current_step: int | None = Field(default=None, ge=0, le=3, validation_alias=AliasChoices("currentStep", "current_step"))
 
 

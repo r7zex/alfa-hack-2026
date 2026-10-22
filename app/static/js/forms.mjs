@@ -230,7 +230,9 @@ export async function autoSaveWizard() {
   captureWizard();
   // A partially filled first step may not be a valid loan yet; don't create
   // invalid server records. Values remain in the browser until they are valid.
-  if (validateLoan(wizard.values)) return wizard.values.id || null;
+  if (validateLoan(wizard.values)) {
+    throw Error("Укажите корректные сумму и срок, чтобы сохранить черновик в базе");
+  }
   const values = { ...wizard.values, currentStep: wizard.step };
   const localId = saveApplication(values, false);
   const id = await syncDraft(localId);
