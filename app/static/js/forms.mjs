@@ -67,6 +67,14 @@ export function startWizard(options = {}) {
       ...source,
     },
   };
+  // Documents are still browser-local: if a restored draft has no access to
+  // the required files, resume at upload instead of the confirmation step.
+  if (source && wizard.step === 3) {
+    const available = ownDocuments().filter(d => wizard.values.documentIds?.includes(d.id));
+    const missing = documentTypes(currentUser().type, wizard.values.productId)
+      .some(t => !available.some(d => d.type === t.id));
+    if (missing) wizard.step = 2;
+  }
   if (options.revise && source) {
     delete wizard.values.id;
     wizard.values.amount = source.alternativeAmount || source.amount;
@@ -181,6 +189,17 @@ export async function wizardNext() {
     wizard.step++;
     renderWizard();
     await autoSaveWizard();
+    return;
+  }
+  // Recheck documents on final submission; users may have reopened a draft
+  // in a different browser where locally saved documents are unavailable.
+  const available = ownDocuments().filter(d => wizard.values.documentIds?.includes(d.id));
+  const missing = documentTypes(currentUser().type, wizard.values.productId)
+    .filter(t => !available.some(d => d.type === t.id));
+  if (missing.length) {
+    wizard.step = 2;
+    renderWizard();
+    document.getElementById("wizard-error").textContent = "Приложите обязательные документы заново";
     return;
   }
   const form = document.getElementById("wizard-form");
