@@ -136,7 +136,30 @@ python -m pytest tests/test_infra.py tests/test_frontend_serving.py -q
 
 Smoke-тесты не требуют работающей БД. Ручная проверка `/ready` при
 запущенном Compose проверяет реальное соединение с PostgreSQL.
-Этот этап пока не создаёт таблицы и не выполняет миграции.
+Таблицы создаются отдельно через Alembic.
+
+## Миграции базы данных
+
+Модели находятся в `app/models/user.py` и `app/models/business.py`.
+Пакет `app.models` импортирует все модели в общую `Base.metadata`,
+которую использует `alembic/env.py`.
+
+После настройки `.env` и запуска PostgreSQL выполните из корня проекта:
+
+```bash
+python -m alembic upgrade head
+python -m alembic check
+```
+
+В Docker миграции запускаются в контейнере приложения:
+
+```bash
+docker compose exec app python -m alembic upgrade head
+```
+
+При переносе моделей структура таблиц и ID существующей миграции
+`1bd2be57b412` сохранены. Уже примененную миграцию повторно создавать
+не нужно. Откат этой миграции удаляет таблицы и их данные.
 
 ## Развёртывание на VPS
 

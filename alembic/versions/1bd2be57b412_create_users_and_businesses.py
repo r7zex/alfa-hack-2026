@@ -67,4 +67,7 @@ def downgrade() -> None:
     op.drop_table('legal_details')
     op.drop_table('ip_details')
     op.drop_table('businesses')
+    # PostgreSQL enum types outlive their tables unless explicitly dropped.
+    sa.Enum(name="userrole").drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name="businesstype").drop(op.get_bind(), checkfirst=True)
     # ### end Alembic commands ###

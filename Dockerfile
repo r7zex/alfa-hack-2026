@@ -10,6 +10,8 @@ RUN python -m pip install --no-cache-dir -r requirements.txt \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
 
 COPY app ./app
+COPY alembic.ini ./
+COPY alembic ./alembic
 COPY artifacts ./artifacts
 COPY data ./data
 
