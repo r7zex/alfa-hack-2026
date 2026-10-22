@@ -138,6 +138,18 @@ function seed() {
     ],
   };
 }
+// Autosave is a persistence detail, not a review event. Compact historic
+// records created by older versions without touching submit/decision events.
+export function normalizeDraftHistory(history) {
+  let seenCreation = false;
+  return (Array.isArray(history) ? history : []).flatMap((entry) => {
+    if (!["Черновик сохранён", "Черновик создан"].includes(entry?.text)) return [entry];
+    if (seenCreation) return [];
+    seenCreation = true;
+    return [{ ...entry, text: "Черновик создан" }];
+  });
+}
+
 let state;
 export function getState() {
   if (state) return state;
@@ -151,7 +163,17 @@ export function getState() {
         Array.isArray(parsed.applications) &&
         Array.isArray(parsed.documents)
       ) {
-        state = parsed;
+        let needsCleanup = false;
+        for (const application of parsed.applications) {
+          const cleaned = normalizeDraftHistory(application.history);
+          if (cleaned.length !== application.history?.length ||
+              application.history?.some((event) => event.text === "Черновик сохранён")) {
+            application.history = cleaned;
+            needsCleanup = true;
+          }
+        }
+        if (needsCleanup) persist(parsed);
+        else state = parsed;
         return state;
       }
     } catch {
@@ -220,13 +242,11 @@ export function saveApplication(input, submit) {
       createdAt: existing?.createdAt || at,
       updatedAt: at,
       history: [
-        ...(existing?.history || []),
-        {
+        ...normalizeDraftHistory(existing?.history),
+        ...(!existing || submit ? [{
           at,
-          text: submit
-            ? "Заявка отправлена на рассмотрение"
-            : "Черновик сохранён",
-        },
+          text: submit ? "Заявка отправлена на рассмотрение" : "Черновик создан",
+        }] : []),
       ],
     };
     if (existing) s.applications[s.applications.indexOf(existing)] = value;

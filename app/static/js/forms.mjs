@@ -138,7 +138,7 @@ function stepContent() {
 }
 export function renderWizard() {
   const titles = ["Потребность", "Бизнес и финансы", "Документы", "Проверка"];
-  const content = `<ol class="wizard-steps">${titles.map((t, i) => `<li class="${i === wizard.step ? "active" : i < wizard.step ? "done" : ""}"><span>${i < wizard.step ? icon("check") : i + 1}</span><b>${t}</b></li>`).join("")}</ol><form id="wizard-form" class="form-stack">${stepContent()}<p id="wizard-error" class="form-error" role="alert"></p><div class="wizard-footer">${button("Сохранить черновик", "save-draft", "text")}<div>${wizard.step ? button("Назад", "wizard-back", "secondary") : ""}<button type="submit" class="button primary">${wizard.step === 3 ? "Отправить заявку" : "Продолжить"} ${icon("arrow")}</button></div></div></form>`;
+  const content = `<ol class="wizard-steps">${titles.map((t, i) => `<li class="${i === wizard.step ? "active" : i < wizard.step ? "done" : ""}"><span>${i < wizard.step ? icon("check") : i + 1}</span><b>${t}</b></li>`).join("")}</ol><form id="wizard-form" class="form-stack">${stepContent()}<p id="wizard-error" class="form-error" role="alert"></p><div class="wizard-footer">${button("Сохранить и закрыть", "save-draft", "text")}<div>${wizard.step ? button("Назад", "wizard-back", "secondary") : ""}<button type="submit" class="button primary">${wizard.step === 3 ? "Отправить заявку" : "Продолжить"} ${icon("arrow")}</button></div></div></form>`;
   const existing = document.querySelector("#modal .modal-content");
   if (existing) {
     existing.innerHTML = content;
