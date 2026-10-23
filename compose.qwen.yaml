@@ -1,0 +1,44 @@
+# Optional local model. Run together with compose.yaml, not on its own.
+services:
+  qwen:
+    image: ollama/ollama:0.40.10
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_KEEP_ALIVE: "10m"
+      OLLAMA_CONTEXT_LENGTH: "16384"
+      OLLAMA_NO_CLOUD: "1"
+    volumes:
+      - qwen_models:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  qwen-init:
+    image: ollama/ollama:0.40.10
+    environment:
+      OLLAMA_HOST: "http://qwen:11434"
+      QWEN_MODEL: ${QWEN_MODEL:-qwen2.5:7b}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ['ollama pull "$${QWEN_MODEL}"']
+    depends_on:
+      qwen:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    environment:
+      QWEN_BASE_URL: "http://qwen:11434/v1"
+      QWEN_REQUIRE_API_KEY: "false"
+    depends_on:
+      qwen-init:
+        condition: service_completed_successfully
+
+volumes:
+  qwen_models:

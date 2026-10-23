@@ -255,6 +255,28 @@
   font-size: 11px;
   text-align: center;
 }
+.assistant-loading {
+  margin: 18px auto;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+.assistant-error {
+  margin-bottom: 12px;
+  color: var(--accent);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.assistant-error .button {
+  margin-top: 8px;
+  margin-right: 10px;
+  min-height: 36px;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+#assistant-message:disabled {
+  opacity: 0.65;
+}
 @media (max-width: 1020px) {
   .assistant-suggestions {
     grid-template-columns: 1fr;

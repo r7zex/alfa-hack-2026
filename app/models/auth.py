@@ -5,6 +5,7 @@ from app.models.business import Business, BusinessType, IPDetails, LegalDetails
 from app.models.user import User, UserRole
 from app.models.session import AuthRateLimit, AuthSession
 from app.models.loan_application import LoanApplication
+from app.models.assistant import AssistantConversation, AssistantTurn
 
 __all__ = [
     "Base",
@@ -17,4 +18,6 @@ __all__ = [
     "AuthSession",
     "LoanApplication",
     "AuthRateLimit",
+    "AssistantConversation",
+    "AssistantTurn",
 ]

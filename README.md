@@ -191,6 +191,10 @@ docker compose up --build -d
 
 ## Командная разработка
 
+- ИИ-ассистент на бесплатном локальном Qwen: ветка `feat/AI-assistant`.
+  Запуск: `docker compose -f compose.yaml -f compose.qwen.yaml up --build -d`.
+  Настройки, API и проверки кредитной темы: [docs/ai-assistant.md](docs/ai-assistant.md).
+
 - Инфраструктура: `feat/backend-bootstrap`.
 - Авторизация: `feat/auth`. Регистрация, пароль, сессии и профиль работают через PostgreSQL.
   API, создание администратора и проверка описаны в [docs/auth.md](docs/auth.md).

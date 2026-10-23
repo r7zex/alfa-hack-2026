@@ -2,7 +2,8 @@
 
 from functools import lru_cache
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
+from urllib.parse import urlsplit
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
@@ -26,6 +27,37 @@ class Settings(BaseSettings):
     demo_auth_enabled: bool = False
     auth_requests_per_minute: int = Field(default=30, ge=1, le=1000)
     auth_email_requests_per_minute: int = Field(default=10, ge=1, le=1000)
+    qwen_base_url: str = "http://127.0.0.1:11434/v1"
+    qwen_api_key: SecretStr = SecretStr("")
+    qwen_model: str = Field(default="qwen2.5:7b", min_length=1, max_length=120)
+    qwen_require_api_key: bool = False
+    assistant_enabled: bool = True
+    assistant_timeout_seconds: int = Field(default=180, ge=5, le=600)
+    assistant_requests_per_minute: int = Field(default=10, ge=1, le=60)
+    assistant_max_turns: int = Field(default=50, ge=1, le=100)
+
+    @field_validator("qwen_base_url")
+    @classmethod
+    def validate_qwen_url(cls, value: str) -> str:
+        url = urlsplit(value)
+        if (
+            url.scheme not in ("http", "https")
+            or not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+        ):
+            raise ValueError(
+                "QWEN_BASE_URL must be an HTTP(S) API base URL without credentials, query or fragment"
+            )
+        return value.rstrip("/")
+
+    @property
+    def assistant_available(self) -> bool:
+        return self.assistant_enabled and (
+            not self.qwen_require_api_key or bool(self.qwen_api_key.get_secret_value())
+        )
 
     @property
     def database_url(self) -> str:

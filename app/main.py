@@ -12,6 +12,7 @@ from app.api.applications import router as applications_router
 from app.api.products import router as products_router
 from app.frontend import FrontendFiles
 from app.api.auth import router as auth_router
+from app.api.assistant import router as assistant_router
 
 
 @asynccontextmanager
@@ -27,6 +28,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
+app.include_router(assistant_router)
 
 
 @app.middleware("http")
