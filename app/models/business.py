@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from enum import Enum
+from datetime import date
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import Date, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -43,6 +44,11 @@ class Business(Base):
         String(8),
         nullable=True,
     )
+
+    contact: Mapped[str | None] = mapped_column(String(100))
+    address: Mapped[str | None] = mapped_column(String(250))
+    phone: Mapped[str | None] = mapped_column(String(25))
+    registration: Mapped[date | None] = mapped_column(Date)
 
     users: Mapped[list[User]] = relationship(
         back_populates="business",

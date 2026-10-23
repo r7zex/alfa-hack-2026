@@ -1,4 +1,4 @@
-# Alfa Hack 2026 — Умный кредитный кабинет предпринимателя
+# Alfa Hack 2026 - Умный кредитный кабинет предпринимателя
 
 Прототип кредитного конвейера для малого и микробизнеса. Реализованы
 инфраструктурный каркас и демонстрационный фронтенд, доступный через FastAPI.
@@ -11,9 +11,9 @@
 - Python 3.12, FastAPI, Uvicorn, SQLAlchemy AsyncSession, psycopg 3.
 - PostgreSQL 16 с Docker volume для сохранения данных.
 - Один backend-контейнер + один контейнер базы данных в Docker Compose.
-- `/health` — liveness; `/ready` — проверка связи с PostgreSQL;
-  `/docs` — Swagger UI.
-- Общая точка подключения к БД — `app/db/session.py`.
+- `/health` - liveness; `/ready` - проверка связи с PostgreSQL;
+  `/docs` - Swagger UI.
+- Общая точка подключения к БД - `app/db/session.py`.
 - Дополнительные Redis, Celery и отдельный ML-сервис пока не требуются.
 
 ## Проверка жюри: полностью в Docker
@@ -128,19 +128,29 @@ curl -fsS http://127.0.0.1:8000/ready
 Чтобы вернуться к полностью контейнерному запуску, остановите локальный
 Uvicorn и выполните `docker compose up --build -d` **без dev override**.
 
+## Авторизация
+
+Формы регистрации ИП/ЮЛ и входа используют `/api/auth`. Пароли хешируются Argon2,
+сессии хранятся в БД и передаются в HttpOnly cookie. Демо-вход доступен только
+при `DEMO_AUTH_ENABLED=true`. По умолчанию администратор входит по почте и паролю;
+создание аккаунта: `docker compose exec app python -m app.admin --email admin@example.com`.
+Подробности: [docs/auth.md](docs/auth.md).
+
 ## Тесты
 
 ```bash
-python -m pytest tests/test_infra.py tests/test_frontend_serving.py -q
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+node --test tests/frontend*.test.mjs
 ```
 
 Smoke-тесты не требуют работающей БД. Ручная проверка `/ready` при
 запущенном Compose проверяет реальное соединение с PostgreSQL.
-Таблицы создаются отдельно через Alembic.
+В Docker миграции применяются при запуске приложения. Для локального Python выполните `python -m alembic upgrade head`.
 
 ## Миграции базы данных
 
-Модели находятся в `app/models/user.py` и `app/models/business.py`.
+Модели находятся в `app/models/user.py`, `app/models/business.py` и `app/models/session.py`.
 Модуль `app.models.auth` импортирует все модели в общую `Base.metadata`,
 которую использует `alembic/env.py`.
 
@@ -151,10 +161,10 @@ python -m alembic upgrade head
 python -m alembic check
 ```
 
-В Docker миграции запускаются в контейнере приложения:
+В Docker миграции применяются автоматически при запуске. Проверить их можно так:
 
 ```bash
-docker compose exec app python -m alembic upgrade head
+docker compose exec app python -m alembic current
 ```
 
 При переносе моделей структура таблиц и ID существующей миграции
@@ -181,7 +191,8 @@ docker compose up --build -d
 ## Командная разработка
 
 - Инфраструктура: `feat/backend-bootstrap`.
-- Авторизация: отдельная ветка `auth`.
+- Авторизация: `feat/auth`. Регистрация, пароль, сессии и профиль работают через PostgreSQL.
+  API, создание администратора и проверка описаны в [docs/auth.md](docs/auth.md).
 - Backend использует единые `app/db/base.py` и `app/db/session.py`.
   Сервисные роутеры подключаются в `app/main.py`.
 - `.env` не коммитим; пример `.env.example` содержит только

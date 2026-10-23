@@ -43,7 +43,9 @@ def test_downgrade_sql_removes_enum_types_after_tables(tmp_path: Path) -> None:
     sql = run_alembic("downgrade", "head:base", "--sql", cwd=tmp_path)
     for enum_type in ("userrole", "businesstype"):
         assert f"DROP TYPE {enum_type};" in sql
-        assert sql.index("DROP TABLE businesses;") < sql.index(f"DROP TYPE {enum_type};")
+        assert sql.index("DROP TABLE businesses;") < sql.index(
+            f"DROP TYPE {enum_type};"
+        )
 
 
 def test_migration_round_trip_matches_models(
@@ -76,7 +78,36 @@ def test_migration_round_trip_matches_models(
         command.upgrade(config, "head")
         command.check(config)
         assert set(inspect(engine).get_table_names()) == {
-            "alembic_version", *Base.metadata.tables
+            "alembic_version",
+            *Base.metadata.tables,
         }
+    finally:
+        engine.dispose()
+
+
+def test_incremental_auth_upgrade_preserves_existing_accounts(tmp_path, monkeypatch):
+    url = "sqlite:///" + (tmp_path / "existing.sqlite").as_posix()
+    monkeypatch.setattr(
+        "app.settings.get_settings", lambda: SimpleNamespace(database_url=url)
+    )
+    config = Config(str(ROOT / "alembic.ini"))
+    engine = create_engine(url)
+    try:
+        command.upgrade(config, "1bd2be57b412")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (email, password_hash, role) VALUES ('existing@example.com', 'old-hash', 'ADMIN')"
+                )
+            )
+        command.upgrade(config, "head")
+        command.check(config)
+        with engine.connect() as connection:
+            assert connection.execute(
+                text("SELECT email, password_hash, is_demo FROM users")
+            ).one() == ("existing@example.com", "old-hash", 0)
+        command.downgrade(config, "1bd2be57b412")
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT count(*) FROM users")) == 1
     finally:
         engine.dispose()

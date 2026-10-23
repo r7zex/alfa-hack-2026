@@ -1,3 +1,4 @@
+import { demoAuthEnabled } from "./auth.mjs";
 import { artwork, authBackground } from "./artwork.mjs";
 import {
   PRODUCTS,
@@ -23,7 +24,7 @@ export function setAuthType(value) {
   authType = value;
 }
 export function auth() {
-  return `<main class="auth-layout"><section class="auth-story">${authBackground(authMode)}${brand()}<div class="auth-story-copy"><h1>Больше возможностей<br> для вашего дела.</h1><p>Подберите финансирование, подайте заявку<br> и получите решение в одном кабинете.</p><div class="auth-products">${PRODUCTS.map((p) => `<div>${icon(p.icon)}<span>${p.name}</span></div>`).join("")}</div></div><div class="auth-story-footer">Создано для предпринимателей <span>Демо-версия</span></div></section><section class="auth-main"><div class="auth-top"><span>Кредитный кабинет бизнеса</span>${button("Войти как админ " + icon("arrow"), "admin-login", "text")}</div><div class="auth-form-wrap"><div class="tabs auth-tabs">${[
+  return `<main class="auth-layout"><section class="auth-story">${authBackground(authMode)}${brand()}<div class="auth-story-copy"><h1>Больше возможностей<br> для вашего дела.</h1><p>Подберите финансирование, подайте заявку<br> и получите решение в одном кабинете.</p><div class="auth-products">${PRODUCTS.map((p) => `<div>${icon(p.icon)}<span>${p.name}</span></div>`).join("")}</div></div><div class="auth-story-footer">Создано для предпринимателей <span>Демо-версия</span></div></section><section class="auth-main"><div class="auth-top"><span>Кредитный кабинет бизнеса</span>${button((demoAuthEnabled() ? "Демо: администратор " : "Вход администратора ") + icon("arrow"), "admin-login", "text")}</div><div class="auth-form-wrap"><div class="tabs auth-tabs">${[
     ["register", "Регистрация"],
     ["login", "Вход"],
   ]
@@ -33,7 +34,7 @@ export function auth() {
     )
     .join(
       "",
-    )}</div><h2>${authMode === "register" ? "Начнём с вашего бизнеса" : "С возвращением"}</h2><p class="muted">${authMode === "register" ? "Минимум данных, чтобы открыть кабинет." : "Введите данные созданного в этом браузере аккаунта."}</p><div class="segmented" role="group" aria-label="Тип бизнеса">${[
+    )}</div><h2>${authMode === "register" ? "Начнём с вашего бизнеса" : "С возвращением"}</h2><p class="muted">${authMode === "register" ? "Минимум данных, чтобы открыть кабинет." : "Введите почту и пароль аккаунта."}</p>${authMode === "register" ? `<div class="segmented" role="group" aria-label="Тип бизнеса">${[
     ["llc", "Юридическое лицо"],
     ["ip", "Индивидуальный предприниматель"],
   ]
@@ -43,7 +44,7 @@ export function auth() {
     )
     .join(
       "",
-    )}</div><form id="auth-form" data-mode="${authMode}" data-type="${authType}" class="form-stack">${authMode === "register" ? field(authType === "ip" ? "ФИО предпринимателя" : "Наименование организации", "name", "", { required: true, attrs: `maxlength="160" placeholder="${authType === "ip" ? "Анна Соколова" : "ООО Вектор"}"` }) : ""}${field(`ИНН ${authType === "ip" ? "ИП (12 цифр)" : "юрлица (10 цифр)"}`, "inn", "", { required: true, attrs: `inputmode="numeric" pattern="[0-9]{${authType === "ip" ? 12 : 10}}" maxlength="${authType === "ip" ? 12 : 10}" autocomplete="off"` })}${field("Электронная почта", "email", "", { type: "email", required: true, attrs: 'maxlength="150" autocomplete="email"' })}<p class="form-error" id="auth-error" role="alert"></p><button class="button primary full" type="submit">${authMode === "register" ? "Создать кабинет" : "Войти в кабинет"} ${icon("arrow")}</button></form><p class="footnote auth-disclaimer">Учебная версия без пароля и проверки личности. Данные остаются в браузере. Используйте вымышленные сведения.</p><div class="demo-divider"><span>Посмотреть без регистрации</span></div><div class="demo-buttons">${button("Демо: юрлицо", "demo-login", "secondary", 'data-id="demo-llc"')}${button("Демо: ИП", "demo-login", "secondary", 'data-id="demo-ip"')}</div></div><footer class="auth-footer">Делора <span>Без реальной выдачи денежных средств</span></footer></section></main>`;
+    )}</div>` : ""}<form id="auth-form" data-mode="${authMode}" data-type="${authType}" class="form-stack">${authMode === "register" ? field(authType === "ip" ? "ФИО предпринимателя" : "Наименование организации", "name", "", { required: true, attrs: `maxlength="160" placeholder="${authType === "ip" ? "Анна Соколова" : "ООО Вектор"}"` }) : ""}${authMode === "register" ? field(`ИНН ${authType === "ip" ? "ИП (12 цифр)" : "юрлица (10 цифр)"}`, "inn", "", { required: true, attrs: `inputmode="numeric" pattern="[0-9]{${authType === "ip" ? 12 : 10}}" maxlength="${authType === "ip" ? 12 : 10}" autocomplete="off"` }) : ""}${field("Электронная почта", "email", "", { type: "email", required: true, attrs: 'maxlength="150" autocomplete="email"' })}${field("Пароль", "password", "", { type: "password", required: true, attrs: `minlength="${authMode === "register" ? 8 : 1}" maxlength="128" autocomplete="${authMode === "register" ? "new-password" : "current-password"}"` })}<p class="form-error" id="auth-error" role="alert"></p><button class="button primary full" type="submit">${authMode === "register" ? "Создать кабинет" : "Войти в кабинет"} ${icon("arrow")}</button></form><p class="footnote auth-disclaimer">Аккаунт и сессия сохраняются на сервере. Учебный сервис: используйте вымышленные сведения.</p>${demoAuthEnabled() ? `<div class="demo-divider"><span>Посмотреть без регистрации</span></div><div class="demo-buttons">${button("Демо: юрлицо", "demo-login", "secondary", 'data-id="demo-llc"')}${button("Демо: ИП", "demo-login", "secondary", 'data-id="demo-ip"')}</div>` : ""}</div><footer class="auth-footer">Делора <span>Без реальной выдачи денежных средств</span></footer></section></main>`;
 }
 let wizard = null;
 export function startWizard(options = {}) {

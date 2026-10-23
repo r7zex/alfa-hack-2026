@@ -9,6 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import engine
 from app.frontend import FrontendFiles
+from app.api.auth import router as auth_router
 
 
 @asynccontextmanager
@@ -18,10 +19,21 @@ async def lifespan(application: FastAPI):
 
 
 app = FastAPI(
-    title="Alfa Hack — Smart Credit Cabinet",
+    title="Alfa Hack - Smart Credit Cabinet",
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.include_router(auth_router)
+
+
+@app.middleware("http")
+async def private_api_responses(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.get("/health", tags=["Infrastructure"])

@@ -8,9 +8,7 @@ import {
   getState,
   currentUser,
   session,
-  login,
-  logout,
-  update,
+  useServerAuth,
   invalidate,
   ownApplications,
   addDocument,
@@ -42,7 +40,11 @@ import {
   saveDraft,
 } from "./js/forms.mjs";
 import { analyst, analystRows } from "./js/analyst.mjs";
-import { makeId, storageIsTemporary } from "./js/runtime.mjs";
+import { storageIsTemporary } from "./js/runtime.mjs";
+
+import { restoreAuth, onAuthChange, signIn, demoSignIn, signOut, saveProfile, changePassword, demoAuthEnabled } from "./js/auth.mjs";
+onAuthChange(useServerAuth);
+useServerAuth(null);
 
 const root = document.getElementById("app");
 function showStorageNotice() {
@@ -123,9 +125,8 @@ function navigate(to) {
   if (location.hash === "#/" + to) render();
   else location.hash = "/" + to;
 }
-function enter(id) {
-  login(id);
-  navigate(id === "admin" ? "current" : "home");
+function enter(user) {
+  navigate(user.role === "admin" ? "current" : "home");
 }
 async function download(id) {
   const doc = getState().documents.find((d) => d.id === id);
@@ -153,11 +154,14 @@ document.addEventListener("click", async (event) => {
     } else if (action === "auth-type") {
       setAuthType(value);
       render();
-    } else if (action === "demo-login") enter(id);
-    else if (action === "admin-login") enter("admin");
-    else if (action === "logout") {
+    } else if (action === "demo-login") enter(await demoSignIn(id === "demo-ip" ? "ip" : "llc"));
+    else if (action === "admin-login") {
+      if (demoAuthEnabled()) enter(await demoSignIn("admin"));
+      else { setAuthMode("login"); render(); }
+    }
+    else if (action === "logout" || action === "logout-all") {
       closeModal();
-      logout();
+      await signOut(action === "logout-all");
       navigate("home");
     } else if (action === "new-application") startWizard();
     else if (action === "close-modal") closeModal();
@@ -176,57 +180,24 @@ document.addEventListener("click", async (event) => {
     toast(error.message, true);
   }
 });
-document.addEventListener("submit", (event) => {
+document.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.target;
   try {
     if (!form.reportValidity()) return;
     const data = Object.fromEntries(new FormData(form));
     if (form.id === "auth-form") {
-      const type = form.dataset.type;
-      const inn = data.inn.trim();
-      const email = data.email.trim().toLowerCase();
-      const error = validateInn(inn, type);
-      if (error) throw Error(error);
-      const existing = getState().users.find(
-        (u) =>
-          u.email.toLowerCase() === email && u.inn === inn && u.type === type,
-      );
-      if (form.dataset.mode === "login") {
-        if (!existing)
-          throw Error(
-            "Аккаунт не найден в этом браузере. Проверьте тип бизнеса, ИНН и почту.",
-          );
-        enter(existing.id);
-      } else {
-        if (!data.name.trim()) throw Error("Укажите имя или название бизнеса");
-        if (
-          getState().users.some(
-            (u) => u.email.toLowerCase() === email || u.inn === inn,
-          )
-        )
-          throw Error(
-            "Аккаунт с такой почтой или ИНН уже существует. Откройте вкладку входа.",
-          );
-        const id = makeId();
-        update((s) =>
-          s.users.push({
-            id,
-            type,
-            inn,
-            email,
-            name: data.name.trim(),
-            contact: type === "ip" ? data.name.trim() : "",
-            ogrn: "",
-            okved: "",
-            registration: "",
-            address: "",
-            phone: "",
-          }),
-        );
-        enter(id);
-        toast("Кабинет создан");
+      const mode = form.dataset.mode;
+      const payload = { email: data.email.trim().toLowerCase(), password: data.password };
+      if (mode === "register") {
+        const error = validateInn(data.inn.trim(), form.dataset.type);
+        if (error) throw Error(error);
+        Object.assign(payload, { type: form.dataset.type, inn: data.inn.trim(), name: data.name.trim() });
       }
+      form.querySelector('[type="submit"]').disabled = true;
+      const user = await signIn(mode, payload);
+      enter(user);
+      if (mode === "register") toast("Кабинет создан");
     } else if (form.id === "calculator") {
       const productId = form.dataset.product;
       const error = validateLoan({ ...data, productId });
@@ -236,28 +207,18 @@ document.addEventListener("submit", (event) => {
     else if (form.id === "profile-form") {
       if (!data.name.trim() || !data.contact.trim())
         throw Error("Заполните название и контактное лицо");
-      if (
-        getState().users.some(
-          (u) =>
-            u.id !== currentUser().id &&
-            u.email.toLowerCase() === data.email.trim().toLowerCase(),
-        )
-      )
-        throw Error("Эта почта уже используется другим аккаунтом");
-      update((s) =>
-        Object.assign(
-          s.users.find((u) => u.id === currentUser().id),
-          {
-            ...data,
-            inn: currentUser().inn,
-            email: data.email.trim().toLowerCase(),
-            name: data.name.trim(),
-            contact: data.contact.trim(),
-          },
-        ),
-      );
+      await saveProfile({
+        name: data.name.trim(), contact: data.contact.trim(),
+        ogrn: data.ogrn, kpp: data.kpp || "", okved: data.okved,
+        registration: data.registration || null, address: data.address, phone: data.phone,
+      });
       render();
       toast("Изменения сохранены");
+    } else if (form.id === "password-form") {
+      if (data.new_password !== data.confirm_password) throw Error("Пароли не совпадают");
+      await changePassword({ current_password: data.current_password, new_password: data.new_password });
+      render();
+      toast("Пароль изменен. Войдите заново.");
     } else if (form.matches(".decision-form")) {
       if (data.status === "rejected" && !data.comment.trim())
         throw Error("При отказе укажите причину в комментарии");
@@ -277,6 +238,8 @@ document.addEventListener("submit", (event) => {
     else if (form.id === "wizard-form")
       document.getElementById("wizard-error").textContent = error.message;
     else toast(error.message, true);
+  } finally {
+    if (form.id === "auth-form" && form.isConnected) form.querySelector('[type="submit"]').disabled = false;
   }
 });
 function calculate() {
@@ -342,4 +305,6 @@ window.addEventListener("storage", (event) => {
     render();
   }
 });
-render();
+restoreAuth().then(render).catch((error) => {
+  root.innerHTML = `<main class="startup-screen"><h1>Не удалось проверить вход</h1><p>${e(error.message)}</p><button class="button primary" data-action="reload">Повторить</button></main>`;
+});

@@ -4,10 +4,11 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import Boolean, ForeignKey, String, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.models.session import AuthSession
 
 if TYPE_CHECKING:
     from app.models.business import Business
@@ -22,6 +23,9 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
 
     email: Mapped[str] = mapped_column(
         String(255),
@@ -47,4 +51,8 @@ class User(Base):
 
     business: Mapped[Business | None] = relationship(
         back_populates="users",
+    )
+
+    sessions: Mapped[list[AuthSession]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )

@@ -1,4 +1,4 @@
-// Browser-only demo repository. Replace this boundary with the authenticated API.
+// Credit applications and documents remain a browser demo. Auth uses the API.
 import { localData, sessionData, cloneData, makeId } from "./runtime.mjs";
 const KEY = "delora.demo.v1";
 const SESSION_KEY = "delora.session.v1";
@@ -174,7 +174,22 @@ export function update(mutator) {
 export function invalidate() {
   state = undefined;
 }
+let serverAuth = false;
+let serverUser = null;
+export function useServerAuth(user) {
+  serverAuth = true;
+  serverUser = user ? {
+    ...user.business,
+    id: user.role === "admin" ? "admin" : user.is_demo ? "demo-" + user.business.type : "user-" + user.id,
+    email: user.email,
+    role: user.role,
+    registration: user.business?.registration || "",
+  } : null;
+  // Remove the old browser-only sign-in marker during migration.
+  sessionData.removeItem(SESSION_KEY);
+}
 export function session() {
+  if (serverAuth) return serverUser ? { id: serverUser.id, role: serverUser.role } : null;
   try {
     return JSON.parse(sessionData.getItem(SESSION_KEY)) || null;
   } catch {
@@ -182,13 +197,15 @@ export function session() {
   }
 }
 export function login(id) {
+  if (serverAuth) throw Error("Используйте серверную авторизацию");
   sessionData.setItem(SESSION_KEY, JSON.stringify({ id }));
 }
 export function logout() {
+  serverUser = null;
   sessionData.removeItem(SESSION_KEY);
 }
 export const currentUser = () =>
-  getState().users.find((u) => u.id === session()?.id);
+  serverAuth ? serverUser : getState().users.find((u) => u.id === session()?.id);
 export const ownApplications = () =>
   getState().applications.filter((a) => a.ownerId === session()?.id);
 export const ownDocuments = () =>

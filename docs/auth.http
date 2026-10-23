@@ -1,0 +1,56 @@
+@base = http://localhost:8000/api/auth
+# Enable cookie persistence in the HTTP client.
+# Set csrf below to the csrf_token returned by register/login or GET /csrf.
+@csrf = paste_csrf_token_here
+
+### Register a synthetic LLC; response sets the HttpOnly session cookie
+POST {{base}}/register
+Content-Type: application/json
+
+{
+  "type": "llc",
+  "inn": "9900000017",
+  "name": "ООО Пример",
+  "email": "client@example.com",
+  "password": "Synthetic-password-123"
+}
+
+### Login
+POST {{base}}/login
+Content-Type: application/json
+
+{"email": "client@example.com", "password": "Synthetic-password-123"}
+
+### Current identity and business
+GET {{base}}/me
+
+### Obtain CSRF for the current cookie
+GET {{base}}/csrf
+
+### Active sessions
+GET {{base}}/sessions
+
+### Save the business profile
+PATCH {{base}}/profile
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"name":"ООО Пример","contact":"Иван Примеров","okved":"47.91","address":"Тестовый адрес","phone":"","ogrn":"","kpp":"","registration":null}
+
+### Change password and revoke all sessions
+POST {{base}}/password
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"current_password":"Synthetic-password-123","new_password":"Another-synthetic-password-123"}
+
+### Logout
+POST {{base}}/logout
+X-CSRF-Token: {{csrf}}
+
+### Logout everywhere
+POST {{base}}/logout-all
+X-CSRF-Token: {{csrf}}
+
+### Client receives 403 here; a real admin receives 200
+GET {{base}}/admin/me
