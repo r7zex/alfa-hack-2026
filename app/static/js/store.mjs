@@ -1,4 +1,4 @@
-// Browser-only demo repository. Replace this boundary with the authenticated API.
+// Local demo storage + a development-only bridge to the applications API.
 import { localData, sessionData, cloneData, makeId } from "./runtime.mjs";
 const KEY = "delora.demo.v1";
 const SESSION_KEY = "delora.session.v1";
@@ -138,6 +138,18 @@ function seed() {
     ],
   };
 }
+// Autosave is a persistence detail, not a review event. Compact historic
+// records created by older versions without touching submit/decision events.
+export function normalizeDraftHistory(history) {
+  let seenCreation = false;
+  return (Array.isArray(history) ? history : []).flatMap((entry) => {
+    if (!["Черновик сохранён", "Черновик создан"].includes(entry?.text)) return [entry];
+    if (seenCreation) return [];
+    seenCreation = true;
+    return [{ ...entry, text: "Черновик создан" }];
+  });
+}
+
 let state;
 export function getState() {
   if (state) return state;
@@ -151,7 +163,17 @@ export function getState() {
         Array.isArray(parsed.applications) &&
         Array.isArray(parsed.documents)
       ) {
-        state = parsed;
+        let needsCleanup = false;
+        for (const application of parsed.applications) {
+          const cleaned = normalizeDraftHistory(application.history);
+          if (cleaned.length !== application.history?.length ||
+              application.history?.some((event) => event.text === "Черновик сохранён")) {
+            application.history = cleaned;
+            needsCleanup = true;
+          }
+        }
+        if (needsCleanup) persist(parsed);
+        else state = parsed;
         return state;
       }
     } catch {
@@ -220,13 +242,11 @@ export function saveApplication(input, submit) {
       createdAt: existing?.createdAt || at,
       updatedAt: at,
       history: [
-        ...(existing?.history || []),
-        {
+        ...normalizeDraftHistory(existing?.history),
+        ...(!existing || submit ? [{
           at,
-          text: submit
-            ? "Заявка отправлена на рассмотрение"
-            : "Черновик сохранён",
-        },
+          text: submit ? "Заявка отправлена на рассмотрение" : "Черновик создан",
+        }] : []),
       ],
     };
     if (existing) s.applications[s.applications.indexOf(existing)] = value;
@@ -353,4 +373,90 @@ export async function readDocument(id) {
   if (!file)
     throw Error("Файл отсутствует в этом браузере. Загрузите его повторно.");
   return file;
+}
+
+
+// Development-only server bridge for the two synthetic accounts.
+const serverIds = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const serverOwners = ["demo-llc", "demo-ip"];
+const draftsInFlight = new Map();
+const queue = new Map();
+const resolvedIds = new Map();
+function demoOwner() {
+  const owner = session()?.id;
+  return serverOwners.includes(owner) ? owner : null;
+}
+function perform(owner, task) {
+  const prior = queue.get(owner) || Promise.resolve();
+  const current = prior.catch(() => {}).then(task);
+  queue.set(owner, current);
+  return current;
+}
+async function serverRequest(owner, path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { "X-Demo-User-Id": owner, ...(options.body ? { "Content-Type": "application/json" } : {}) },
+  });
+  if (!response.ok) {
+    let detail;
+    try { detail = (await response.json()).detail; } catch { /* non-JSON error */ }
+    throw Error(typeof detail === "string" ? detail : `HTTP ${response.status}: не удалось сохранить заявку`);
+  }
+  return response.json();
+}
+function payload(row) {
+  const nullable = value => value === "" || value == null ? null : Number(value);
+  return {
+    productId: row.productId, amount: Number(row.amount), months: Number(row.months),
+    purpose: row.purpose || null, revenue: nullable(row.revenue),
+    expenses: nullable(row.expenses), debtPayment: nullable(row.debtPayment),
+    currentStep: row.currentStep ?? 0,
+  };
+}
+export async function syncDraft(localId) {
+  const owner = demoOwner();
+  if (!owner) return localId;
+  return perform(owner, async () => {
+    const id = resolvedIds.get(localId) || localId;
+    const row = getState().applications.find(a => a.id === id && a.ownerId === owner);
+    if (!row || row.status !== "draft") return id;
+    const known = serverIds.test(id);
+    const result = await serverRequest(owner, known ? `/api/applications/${id}` : "/api/applications", {
+      method: known ? "PATCH" : "POST", body: JSON.stringify(payload(row)),
+    });
+    if (!known) {
+      resolvedIds.set(id, result.id);
+      update(s => {
+        const source = s.applications.find(a => a.id === id && a.ownerId === owner);
+        if (source) source.id = result.id;
+      });
+    }
+    return result.id;
+  });
+}
+export async function submitDraft(localId, values) {
+  const owner = demoOwner();
+  if (!owner) return saveApplication(values, true);
+  const id = await syncDraft(localId);
+  await perform(owner, () => serverRequest(owner, `/api/applications/${id}/submit`, { method: "POST" }));
+  return saveApplication({ ...values, id }, true);
+}
+export async function restoreServerApplications() {
+  const owner = demoOwner();
+  if (!owner) return;
+  const rows = await perform(owner, () => serverRequest(owner, "/api/applications"));
+  if (session()?.id !== owner) return;
+  update(s => {
+    const known = new Map(s.applications.map(a => [a.id, a]));
+    for (const row of rows) {
+      const old = known.get(row.id);
+      known.set(row.id, {
+        ...old, ...row, ownerId: owner,
+        profile: old?.profile || cloneData(s.users.find(u => u.id === owner)),
+        documentIds: old?.documentIds || [],
+        history: old?.history || [{ text: row.status === "draft" ? "Черновик сохранён" : "Заявка отправлена", at: row.createdAt }],
+      });
+    }
+    s.applications = [...known.values()];
+  });
 }

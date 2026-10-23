@@ -8,6 +8,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import engine
+from app.api.applications import router as applications_router
+from app.api.products import router as products_router
 from app.frontend import FrontendFiles
 
 
@@ -41,6 +43,10 @@ async def ready() -> dict[str, str]:
             status_code=503, detail="Database is unavailable"
         ) from exc
     return {"status": "ready", "database": "connected"}
+
+
+app.include_router(products_router)
+app.include_router(applications_router)
 
 
 # Keep this mount after API routes so /health, /ready and future routers win.
