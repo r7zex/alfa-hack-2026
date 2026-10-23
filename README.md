@@ -134,6 +134,7 @@ Uvicorn и выполните `docker compose up --build -d` **без dev overri
 сессии хранятся в БД и передаются в HttpOnly cookie. Демо-вход доступен только
 при `DEMO_AUTH_ENABLED=true`. По умолчанию администратор входит по почте и паролю;
 создание аккаунта: `docker compose exec app python -m app.admin --email admin@example.com`.
+Заявки и черновики из main используют ту же серверную сессию и CSRF.
 Подробности: [docs/auth.md](docs/auth.md).
 
 ## Тесты

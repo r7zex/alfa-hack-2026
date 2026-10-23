@@ -111,3 +111,50 @@ def test_incremental_auth_upgrade_preserves_existing_accounts(tmp_path, monkeypa
             assert connection.scalar(text("SELECT count(*) FROM users")) == 1
     finally:
         engine.dispose()
+
+
+@pytest.mark.parametrize("legacy_step", [True, False])
+def test_existing_loan_drafts_survive_auth_merge(tmp_path, monkeypatch, legacy_step):
+    from uuid import uuid4
+    from app.models.loan_application import LoanApplication
+
+    url = "sqlite:///" + (tmp_path / "legacy-loans.sqlite").as_posix()
+    monkeypatch.setattr(
+        "app.settings.get_settings", lambda: SimpleNamespace(database_url=url)
+    )
+    config = Config(str(ROOT / "alembic.ini"))
+    engine = create_engine(url)
+    try:
+        LoanApplication.__table__.create(engine)
+        row_id = uuid4()
+        with engine.begin() as connection:
+            connection.execute(
+                LoanApplication.__table__.insert().values(
+                    id=row_id,
+                    owner_id="demo-ip",
+                    product_id="working",
+                    amount=1000000,
+                    months=12,
+                    status="draft",
+                    current_step=2,
+                )
+            )
+            if not legacy_step:
+                connection.execute(
+                    text("ALTER TABLE loan_applications DROP COLUMN current_step")
+                )
+        command.upgrade(config, "head")
+        command.check(config)
+        with engine.connect() as connection:
+            assert connection.execute(
+                text(
+                    "SELECT owner_id, amount, status, current_step FROM loan_applications"
+                )
+            ).one() == ("demo-ip", 1000000, "draft", 2 if legacy_step else 0)
+        command.upgrade(config, "head")
+        with engine.connect() as connection:
+            assert (
+                connection.scalar(text("SELECT count(*) FROM loan_applications")) == 1
+            )
+    finally:
+        engine.dispose()

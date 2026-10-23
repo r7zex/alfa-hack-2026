@@ -130,6 +130,14 @@ test("demo repository preserves ownership and rejects repeated decisions or acce
     false,
   );
   assert.ok(store.ownApplications().some((a) => a.id === id));
+  // Each autosave updates values and step, not the customer-facing timeline.
+  for (const [currentStep, purpose] of [[1, "Цель"], [2, "Новая цель"], [2, "Новая цель 2"]]) {
+    store.saveApplication({ id, productId: "working", amount: 1000000,
+      months: 12, documentIds: [], purpose, currentStep }, false);
+  }
+  const draft = store.ownApplications().find((a) => a.id === id);
+  assert.equal(draft.currentStep, 2);
+  assert.deepEqual(draft.history.map((h) => h.text), ["Черновик создан"]);
   store.login("demo-ip");
   assert.equal(
     store.ownApplications().some((a) => a.id === id),
@@ -141,6 +149,10 @@ test("demo repository preserves ownership and rejects repeated decisions or acce
   store.saveApplication(
     { id, productId: "working", amount: 1000000, months: 12, documentIds: [] },
     true,
+  );
+  assert.deepEqual(
+    store.ownApplications().find((a) => a.id === id).history.map((h) => h.text),
+    ["Черновик создан", "Заявка отправлена на рассмотрение"],
   );
   assert.throws(() => store.saveApplication({ id }, false), /редактирования/);
   store.login("admin");
@@ -156,4 +168,19 @@ test("demo repository preserves ownership and rejects repeated decisions or acce
     "completed",
   );
   assert.throws(() => store.acceptOffer(id), /больше не доступно/);
+});
+
+
+test("old autosave entries collapse to one creation event while decisions survive", async () => {
+  const { normalizeDraftHistory } = await import("../app/static/js/store.mjs");
+  const entries = [
+    { at: "one", text: "Черновик сохранён" },
+    { at: "two", text: "Черновик сохранён" },
+    { at: "three", text: "Заявка отправлена на рассмотрение" },
+    { at: "four", text: "Аналитик одобрил заявку" },
+  ];
+  assert.deepEqual(normalizeDraftHistory(entries), [
+    { at: "one", text: "Черновик создан" },
+    entries[2], entries[3],
+  ]);
 });

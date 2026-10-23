@@ -6,8 +6,8 @@ let onUser = () => {};
 export const demoAuthEnabled = () => demoEnabled;
 export function onAuthChange(callback) { onUser = callback; }
 
-export async function authRequest(path, { method = "GET", body } = {}) {
-  const response = await fetch("/api/auth" + path, {
+export async function apiRequest(path, { method = "GET", body } = {}) {
+  const response = await fetch(path, {
     method,
     credentials: "same-origin",
     headers: {
@@ -17,7 +17,7 @@ export async function authRequest(path, { method = "GET", body } = {}) {
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!response.ok) {
-    if (response.status === 401 && path !== "/login") {
+    if (response.status === 401 && path !== "/api/auth/login") {
       csrfToken = "";
       onUser(null);
       globalThis.dispatchEvent?.(new Event("delora:refresh"));
@@ -32,6 +32,8 @@ export async function authRequest(path, { method = "GET", body } = {}) {
   }
   return response.status === 204 ? null : response.json();
 }
+
+export function authRequest(path, options) { return apiRequest("/api/auth" + path, options); }
 
 export async function restoreAuth() {
   const config = await authRequest("/config");

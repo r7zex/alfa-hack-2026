@@ -4,6 +4,7 @@ from app.db.base import Base
 from app.models.business import Business, BusinessType, IPDetails, LegalDetails
 from app.models.user import User, UserRole
 from app.models.session import AuthRateLimit, AuthSession
+from app.models.loan_application import LoanApplication
 
 __all__ = [
     "Base",
@@ -14,5 +15,6 @@ __all__ = [
     "User",
     "UserRole",
     "AuthSession",
+    "LoanApplication",
     "AuthRateLimit",
 ]

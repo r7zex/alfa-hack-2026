@@ -13,6 +13,8 @@ import {
   ownApplications,
   currentUser,
   saveApplication,
+  syncDraft,
+  submitDraft,
 } from "./store.mjs";
 import { brand, icon, button, field, modal, closeModal, toast } from "./ui.mjs";
 let authMode = "register",
@@ -53,7 +55,7 @@ export function startWizard(options = {}) {
     : null;
   const p = productById(options.productId || source?.productId);
   wizard = {
-    step: 0,
+    step: options.revise ? 0 : Math.min(3, Math.max(0, source?.currentStep ?? 0)),
     values: {
       productId: p.id,
       amount: options.amount || 1000000,
@@ -66,6 +68,14 @@ export function startWizard(options = {}) {
       ...source,
     },
   };
+  // Documents are still browser-local: if a restored draft has no access to
+  // the required files, resume at upload instead of the confirmation step.
+  if (source && wizard.step === 3) {
+    const available = ownDocuments().filter(d => wizard.values.documentIds?.includes(d.id));
+    const missing = documentTypes(currentUser().type, wizard.values.productId)
+      .some(t => !available.some(d => d.type === t.id));
+    if (missing) wizard.step = 2;
+  }
   if (options.revise && source) {
     delete wizard.values.id;
     wizard.values.amount = source.alternativeAmount || source.amount;
@@ -129,7 +139,7 @@ function stepContent() {
 }
 export function renderWizard() {
   const titles = ["Потребность", "Бизнес и финансы", "Документы", "Проверка"];
-  const content = `<ol class="wizard-steps">${titles.map((t, i) => `<li class="${i === wizard.step ? "active" : i < wizard.step ? "done" : ""}"><span>${i < wizard.step ? icon("check") : i + 1}</span><b>${t}</b></li>`).join("")}</ol><form id="wizard-form" class="form-stack">${stepContent()}<p id="wizard-error" class="form-error" role="alert"></p><div class="wizard-footer">${button("Сохранить черновик", "save-draft", "text")}<div>${wizard.step ? button("Назад", "wizard-back", "secondary") : ""}<button type="submit" class="button primary">${wizard.step === 3 ? "Отправить заявку" : "Продолжить"} ${icon("arrow")}</button></div></div></form>`;
+  const content = `<ol class="wizard-steps">${titles.map((t, i) => `<li class="${i === wizard.step ? "active" : i < wizard.step ? "done" : ""}"><span>${i < wizard.step ? icon("check") : i + 1}</span><b>${t}</b></li>`).join("")}</ol><form id="wizard-form" class="form-stack">${stepContent()}<p id="wizard-error" class="form-error" role="alert"></p><div class="wizard-footer">${button("Сохранить и закрыть", "save-draft", "text")}<div>${wizard.step ? button("Назад", "wizard-back", "secondary") : ""}<button type="submit" class="button primary">${wizard.step === 3 ? "Отправить заявку" : "Продолжить"} ${icon("arrow")}</button></div></div></form>`;
   const existing = document.querySelector("#modal .modal-content");
   if (existing) {
     existing.innerHTML = content;
@@ -156,10 +166,11 @@ function validateStep() {
   }
   return "";
 }
-export function wizardBack() {
+export async function wizardBack() {
   captureWizard();
   wizard.step = Math.max(0, wizard.step - 1);
   renderWizard();
+  await autoSaveWizard();
 }
 function showSavedApplication(id) {
   const target = "#/applications/" + id;
@@ -168,7 +179,7 @@ function showSavedApplication(id) {
     window.dispatchEvent(new Event("delora:refresh"));
   } else location.hash = target;
 }
-export function wizardNext() {
+export async function wizardNext() {
   captureWizard();
   const error = validateStep();
   if (error) {
@@ -178,11 +189,24 @@ export function wizardNext() {
   if (wizard.step < 3) {
     wizard.step++;
     renderWizard();
+    await autoSaveWizard();
+    return;
+  }
+  // Recheck documents on final submission; users may have reopened a draft
+  // in a different browser where locally saved documents are unavailable.
+  const available = ownDocuments().filter(d => wizard.values.documentIds?.includes(d.id));
+  const missing = documentTypes(currentUser().type, wizard.values.productId)
+    .filter(t => !available.some(d => d.type === t.id));
+  if (missing.length) {
+    wizard.step = 2;
+    renderWizard();
+    document.getElementById("wizard-error").textContent = "Приложите обязательные документы заново";
     return;
   }
   const form = document.getElementById("wizard-form");
   if (!form.reportValidity()) return;
-  const id = saveApplication(
+  const id = await submitDraft(
+    await autoSaveWizard(),
     {
       ...wizard.values,
       amount: +wizard.values.amount,
@@ -196,18 +220,42 @@ export function wizardNext() {
         at: new Date().toISOString(),
       },
     },
-    true,
   );
   closeModal();
   wizard = null;
   showSavedApplication(id);
   toast("Заявка отправлена. Следите за статусом в кабинете.");
 }
-export function saveDraft() {
+export async function saveDraft() {
   captureWizard();
-  const id = saveApplication(wizard.values, false);
+  const id = await autoSaveWizard();
   closeModal();
   wizard = null;
   showSavedApplication(id);
   toast("Черновик сохранён");
+}
+
+
+let autoSaveTimer;
+export function scheduleWizardAutoSave() {
+  if (!wizard || wizard.step === 3) return;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    autoSaveWizard().catch(error => toast(`Не удалось синхронизировать черновик: ${error.message}`, true));
+  }, 900);
+}
+export async function autoSaveWizard() {
+  clearTimeout(autoSaveTimer);
+  if (!wizard) return null;
+  captureWizard();
+  // A partially filled first step may not be a valid loan yet; don't create
+  // invalid server records. Values remain in the browser until they are valid.
+  if (validateLoan(wizard.values)) {
+    throw Error("Укажите корректные сумму и срок, чтобы сохранить черновик в базе");
+  }
+  const values = { ...wizard.values, currentStep: wizard.step };
+  const localId = saveApplication(values, false);
+  const id = await syncDraft(localId);
+  if (wizard && (wizard.values.id === localId || !wizard.values.id)) wizard.values.id = id;
+  return id;
 }

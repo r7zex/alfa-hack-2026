@@ -15,6 +15,7 @@ import {
   readDocument,
   decide,
   acceptOffer,
+  restoreServerApplications,
 } from "./js/store.mjs";
 import { brand, icon, button, toast, closeModal } from "./js/ui.mjs";
 import {
@@ -38,6 +39,8 @@ import {
   wizardBack,
   wizardNext,
   saveDraft,
+  scheduleWizardAutoSave,
+  autoSaveWizard,
 } from "./js/forms.mjs";
 import { analyst, analystRows } from "./js/analyst.mjs";
 import { storageIsTemporary } from "./js/runtime.mjs";
@@ -127,6 +130,7 @@ function navigate(to) {
 }
 function enter(user) {
   navigate(user.role === "admin" ? "current" : "home");
+  if (user.role !== "admin") restoreServerApplications().then(render).catch(error => toast(`Серверные заявки недоступны: ${error.message}`, true));
 }
 async function download(id) {
   const doc = getState().documents.find((d) => d.id === id);
@@ -164,10 +168,10 @@ document.addEventListener("click", async (event) => {
       await signOut(action === "logout-all");
       navigate("home");
     } else if (action === "new-application") startWizard();
-    else if (action === "close-modal") closeModal();
-    else if (action === "wizard-product") wizardProduct(id);
-    else if (action === "wizard-back") wizardBack();
-    else if (action === "save-draft") saveDraft();
+    else if (action === "close-modal") { if (getWizard()) await autoSaveWizard(); closeModal(); }
+    else if (action === "wizard-product") { wizardProduct(id); scheduleWizardAutoSave(); }
+    else if (action === "wizard-back") await wizardBack();
+    else if (action === "save-draft") await saveDraft();
     else if (action === "edit-application") startWizard({ id });
     else if (action === "revise-application") startWizard({ id, revise: true });
     else if (action === "download-document") await download(id);
@@ -203,7 +207,7 @@ document.addEventListener("submit", async (event) => {
       const error = validateLoan({ ...data, productId });
       if (error) throw Error(error);
       startWizard({ productId, amount: +data.amount, months: +data.months });
-    } else if (form.id === "wizard-form") wizardNext();
+    } else if (form.id === "wizard-form") await wizardNext();
     else if (form.id === "profile-form") {
       if (!data.name.trim() || !data.contact.trim())
         throw Error("Заполните название и контактное лицо");
@@ -269,11 +273,13 @@ document.addEventListener("input", (event) => {
       document.getElementById("analyst-list").dataset.history === "true",
       input.value,
     );
+  if (input.closest("#wizard-form")) scheduleWizardAutoSave();
   if (input.closest(".decision-form") && input.name === "status")
     input.form.elements.comment.required = input.value === "rejected";
 });
 document.addEventListener("change", async (event) => {
   const input = event.target;
+  if (input.closest("#wizard-form") && !input.matches("[data-upload]")) scheduleWizardAutoSave();
   if (!input.matches("[data-upload]") || !input.files?.[0]) return;
   input.disabled = true;
   try {
@@ -286,6 +292,7 @@ document.addEventListener("change", async (event) => {
     ) {
       getWizard().values.documentIds.push(doc.id);
       renderWizard();
+      scheduleWizardAutoSave();
     } else render();
     toast("Документ сохранён в браузере");
   } catch (error) {
@@ -305,6 +312,12 @@ window.addEventListener("storage", (event) => {
     render();
   }
 });
-restoreAuth().then(render).catch((error) => {
+restoreAuth().then(async () => {
+  render();
+  if (session()?.id && session().id !== "admin") {
+    try { await restoreServerApplications(); render(); }
+    catch (error) { toast(`Серверные заявки недоступны: ${error.message}`, true); }
+  }
+}).catch((error) => {
   root.innerHTML = `<main class="startup-screen"><h1>Не удалось проверить вход</h1><p>${e(error.message)}</p><button class="button primary" data-action="reload">Повторить</button></main>`;
 });

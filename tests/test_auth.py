@@ -472,3 +472,86 @@ def test_simultaneous_registration_has_one_account_and_one_business(auth_env):
         assert await db.scalar(select(func.count()).select_from(Business)) == 1
 
     run_db(factory, inspect)
+
+
+def test_applications_use_the_authenticated_owner_and_csrf(auth_env):
+    with TestClient(app) as first, TestClient(app) as second, TestClient(app) as guest:
+        signup(first)
+        signup(second, type_="ip", email="other@example.com")
+        payload = {
+            "productId": "working",
+            "amount": 1000000,
+            "months": 12,
+            "currentStep": 1,
+        }
+        assert (
+            guest.get(
+                "/api/applications", headers={"X-Demo-User-Id": "demo-llc"}
+            ).status_code
+            == 401
+        )
+        assert first.post("/api/applications", json=payload).status_code == 403
+        response = first.post("/api/applications", json=payload, headers=csrf(first))
+        assert response.status_code == 201, response.text
+        application_id = response.json()["id"]
+        assert first.get("/api/applications").json()[0]["id"] == application_id
+        assert (
+            second.get(
+                "/api/applications", headers={"X-Demo-User-Id": "demo-llc"}
+            ).json()
+            == []
+        )
+        assert second.get("/api/applications/" + application_id).status_code == 404
+        assert (
+            second.patch(
+                "/api/applications/" + application_id,
+                json={"amount": 2000000},
+                headers=csrf(second),
+            ).status_code
+            == 404
+        )
+        response = first.patch(
+            "/api/applications/" + application_id,
+            json={
+                "purpose": "Товары",
+                "revenue": 1800000,
+                "expenses": 900000,
+                "debtPayment": 0,
+                "currentStep": 3,
+            },
+            headers=csrf(first),
+        )
+        assert response.status_code == 200
+        assert response.json()["currentStep"] == 3
+        response = first.post(
+            "/api/applications/" + application_id + "/submit", headers=csrf(first)
+        )
+        assert response.status_code == 200 and response.json()["status"] == "pending"
+        assert first.post("/api/auth/logout", headers=csrf(first)).status_code == 204
+        assert first.get("/api/applications/" + application_id).status_code == 401
+
+
+def test_demo_auth_keeps_legacy_application_ownership(auth_env):
+    factory, settings = auth_env
+    settings.demo_auth_enabled = True
+    from app.models.loan_application import LoanApplication
+
+    async def seed_legacy(db):
+        row = LoanApplication(
+            owner_id="demo-ip",
+            product_id="working",
+            amount=1000000,
+            months=12,
+            current_step=2,
+        )
+        db.add(row)
+        await db.commit()
+        return str(row.id)
+
+    application_id = run_db(factory, seed_legacy)
+    with TestClient(app) as client:
+        assert client.post("/api/auth/demo", json={"account": "ip"}).status_code == 200
+        response = client.get("/api/applications")
+        assert response.status_code == 200
+        assert response.json()[0]["id"] == application_id
+        assert response.json()[0]["currentStep"] == 2
