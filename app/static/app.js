@@ -44,9 +44,15 @@ import {
 } from "./js/forms.mjs";
 import { analyst, analystRows } from "./js/analyst.mjs";
 import { storageIsTemporary } from "./js/runtime.mjs";
+import { assistant, mountAssistant, clearAssistant } from "./js/assistant.mjs";
 
 import { restoreAuth, onAuthChange, signIn, demoSignIn, signOut, saveProfile, changePassword, demoAuthEnabled } from "./js/auth.mjs";
-onAuthChange(useServerAuth);
+let assistantUserId = null;
+onAuthChange((user) => {
+  if (assistantUserId !== (user?.id ?? null)) clearAssistant();
+  assistantUserId = user?.id ?? null;
+  useServerAuth(user);
+});
 useServerAuth(null);
 
 const root = document.getElementById("app");
@@ -73,7 +79,7 @@ function shell(content, user, section, admin) {
   const count = admin
     ? getState().applications.filter((a) => a.status === "pending").length
     : ownApplications().length;
-  return `<a class="skip-link" href="#main-content" data-action="skip-content">Перейти к содержимому</a><div class="app-shell"><aside class="sidebar">${brand()}<nav aria-label="Основная навигация">${admin ? navItem("current", "Текущие заявки", "file", section === "current", count) + navItem("history", "История заявок", "history", section === "history") : navItem("home", "Главная", "home", section === "home") + navItem("products", "Подбор кредита", "search", section === "products") + navItem("applications", "Мои заявки", "file", section === "applications", count) + navItem("profile", "Личный кабинет", "user", section === "profile")}</nav><div class="sidebar-footer"><div class="demo-note"><span class="demo-dot"></span>Демо-версия сервиса<small>Синтетические данные</small></div>${button(icon("exit") + " Выйти", "logout", "text")}</div></aside><div class="workspace"><header class="topbar"><span>${admin ? "Рабочее место аналитика" : "Кабинет предпринимателя"}</span><div class="topbar-account">${admin ? `<span class="analyst-label">${icon("shield")} Кредитный аналитик</span>` : `<a href="#/profile">${icon(user.type === "ip" ? "user" : "building")}<strong>${e(user.name)}</strong>${icon("chevron")}</a>`}${button(icon("exit"), "logout", "icon-button mobile-logout", 'aria-label="Выйти"')}</div></header><main id="main-content" class="main-content" tabindex="-1">${content}</main></div></div>`;
+  return `<a class="skip-link" href="#main-content" data-action="skip-content">Перейти к содержимому</a><div class="app-shell"><aside class="sidebar">${brand()}<nav aria-label="Основная навигация">${admin ? navItem("current", "Текущие заявки", "file", section === "current", count) + navItem("history", "История заявок", "history", section === "history") : navItem("home", "Главная", "home", section === "home") + navItem("products", "Подбор кредита", "search", section === "products") + navItem("applications", "Мои заявки", "file", section === "applications", count) + navItem("assistant", "ИИ-ассистент", "chat", section === "assistant") + navItem("profile", "Личный кабинет", "user", section === "profile")}</nav><div class="sidebar-footer"><div class="demo-note"><span class="demo-dot"></span>Демо-версия сервиса<small>Синтетические данные</small></div>${button(icon("exit") + " Выйти", "logout", "text")}</div></aside><div class="workspace"><header class="topbar"><span>${admin ? "Рабочее место аналитика" : "Кабинет предпринимателя"}</span><div class="topbar-account">${admin ? `<span class="analyst-label">${icon("shield")} Кредитный аналитик</span>` : `<a href="#/profile">${icon(user.type === "ip" ? "user" : "building")}<strong>${e(user.name)}</strong>${icon("chevron")}</a>`}${button(icon("exit"), "logout", "icon-button mobile-logout", 'aria-label="Выйти"')}</div></header><main id="main-content" class="main-content" tabindex="-1">${content}</main></div></div>`;
 }
 function render() {
   try {
@@ -100,11 +106,13 @@ function render() {
         ? applicationDetail(parts[1])
         : applications(params.get("status") || "all");
     else if (section === "profile") content = profile(user);
+    else if (section === "assistant") content = assistant(user.id);
     else {
       section = "home";
       content = home(user);
     }
     root.innerHTML = shell(content, user, section, admin);
+    if (section === "assistant") mountAssistant(user.id);
     showStorageNotice();
     document.title =
       "Делора - " +
@@ -113,6 +121,7 @@ function render() {
         products: "Подбор кредита",
         applications: "Мои заявки",
         profile: "Личный кабинет",
+        assistant: "ИИ-ассистент",
         current: "Текущие заявки",
         history: "История заявок",
       }[section];
