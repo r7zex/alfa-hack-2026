@@ -34,6 +34,14 @@ class QwenClient:
             # A truncated JSON response is rejected, never shown to the user.
             "max_tokens": 2048,
         }
+        # Ollama enables thinking by default for Qwen 3.8. Disable it so the
+        # scope checks and generator return their final JSON within the budget.
+        model_name = (
+            self.settings.qwen_model.casefold().rsplit("/", 1)[-1].split(":", 1)[0]
+        )
+        effort = self.settings.qwen_reasoning_effort
+        if effort == "none" or (effort == "auto" and model_name == "qwen3.8"):
+            payload["reasoning_effort"] = "none"
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(

@@ -1,6 +1,7 @@
 """Runtime settings shared by local Python and Docker deployments."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from urllib.parse import urlsplit
@@ -29,10 +30,11 @@ class Settings(BaseSettings):
     auth_email_requests_per_minute: int = Field(default=10, ge=1, le=1000)
     qwen_base_url: str = "http://127.0.0.1:11434/v1"
     qwen_api_key: SecretStr = SecretStr("")
-    qwen_model: str = Field(default="qwen2.5:7b", min_length=1, max_length=120)
+    qwen_model: str = Field(default="qwen3.8:27b", min_length=1, max_length=120)
+    qwen_reasoning_effort: Literal["auto", "none", "omit"] = "auto"
     qwen_require_api_key: bool = False
     assistant_enabled: bool = True
-    assistant_timeout_seconds: int = Field(default=180, ge=5, le=600)
+    assistant_timeout_seconds: int = Field(default=300, ge=5, le=600)
     assistant_requests_per_minute: int = Field(default=10, ge=1, le=60)
     assistant_max_turns: int = Field(default=50, ge=1, le=100)
 

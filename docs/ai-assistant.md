@@ -1,7 +1,7 @@
 # Кредитный ИИ-ассистент на Qwen
 
 Ветка: `feat/AI-assistant`. Страница: `/#/assistant`.
-Основной вариант использует локальный `qwen2.5:7b` через Ollama.
+Основной вариант использует локальный `qwen3.8:27b` через Ollama.
 Платный API и ключ не нужны. Вычисления выполняются на вашем компьютере
 или сервере. Модель загружается один раз и сохраняется в Docker volume.
 
@@ -12,10 +12,11 @@
 
 ```dotenv
 QWEN_BASE_URL=http://127.0.0.1:11434/v1
-QWEN_MODEL=qwen2.5:7b
+QWEN_MODEL=qwen3.8:27b
+QWEN_REASONING_EFFORT=auto
 QWEN_REQUIRE_API_KEY=false
 ASSISTANT_ENABLED=true
-ASSISTANT_TIMEOUT_SECONDS=180
+ASSISTANT_TIMEOUT_SECONDS=300
 ASSISTANT_REQUESTS_PER_MINUTE=10
 ASSISTANT_MAX_TURNS=50
 ```
@@ -31,10 +32,14 @@ http://127.0.0.1:8000/, войти клиентом и выбрать "ИИ-ас
 Для локальных синтетических аккаунтов можно установить `DEMO_AUTH_ENABLED=true`.
 Контейнер приложения автоматически выполняет миграции Alembic.
 
-Запуск на CPU поддерживается. Скорость зависит от оборудования; для первого
-ответа модель должна загрузиться в память. GPU в этой конфигурации не требуется.
-Для более слабого компьютера можно выбрать `QWEN_MODEL=qwen2.5:1.5b`, однако
-после замены модели нужно снова проверить отказы и качество ответов.
+Файлы `qwen3.8:27b` занимают около 18 ГБ по данным каталога Ollama:
+https://ollama.com/library/qwen3.8:27b . Это размер файлов, а не полное требование
+к оперативной памяти: при запуске нужны также контекст и ресурсы приложения.
+Конфигурация допускает CPU, но время ответа зависит от оборудования.
+Для более слабого компьютера можно выбрать `QWEN_MODEL=qwen2.5:7b` или
+`QWEN_MODEL=qwen2.5:1.5b`. После замены модели нужно снова проверить отказы
+и качество ответов. Ранее сохранённый `.env` сам не изменится: замените в нём
+`QWEN_MODEL` явно, если хотите перейти на Qwen 3.8.
 При нехватке памяти уменьшайте модель или длину контекста, а не отключайте проверки.
 
 Остановка без удаления переписки и модели:
@@ -49,7 +54,7 @@ docker compose -f compose.yaml -f compose.qwen.yaml down
 Нужны зависимости проекта и настроенный `.env`.
 
 ```bash
-ollama pull qwen2.5:7b
+ollama pull qwen3.8:27b
 python -m alembic upgrade head
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
@@ -66,10 +71,15 @@ URL на `http://qwen:11434/v1`.
 `POST /chat/completions` с `response_format: {"type":"json_object"}`.
 Адрес и название модели нельзя передать из браузера.
 
-Модель по умолчанию не использует thinking и нестандартные параметры.
-При смене на thinking-модели нужно обеспечить обычный JSON в content;
-reasoning_content пользователю не показывается. Платные провайдеры
-не используются по умолчанию и не являются условием работы ассистента.
+`QWEN_REASONING_EFFORT=auto` автоматически добавляет `reasoning_effort: "none"`
+для тегов Ollama `qwen3.8` и `qwen3.8:27b`, включая namespace `library/`.
+Это отключает thinking для классификации, генерации и проверки ответа,
+чтобы бюджет вывода использовался для финального JSON. Поле reasoning_content
+пользователю не показывается и не сохраняется в истории.
+Для других алиасов можно установить `QWEN_REASONING_EFFORT=none`, а для
+провайдера без поддержки параметра `QWEN_REASONING_EFFORT=omit`.
+В режиме auto старые модели Qwen 2.5 получают прежний набор параметров.
+Платные провайдеры не используются по умолчанию.
 
 ## Границы темы и данные
 
@@ -147,5 +157,5 @@ python -m scripts.check_qwen
 Источники интерфейса и модели:
 
 - https://docs.ollama.com/api/openai-compatibility
-- https://ollama.com/library/qwen2.5:7b
-- https://huggingface.co/Qwen/Qwen2.5-7B-Instruct
+- https://ollama.com/library/qwen3.8:27b
+- https://github.com/QwenLM/Qwen3.8
