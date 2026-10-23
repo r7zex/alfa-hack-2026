@@ -1,4 +1,5 @@
-// Local demo storage + a development-only bridge to the applications API.
+import { apiRequest } from "./auth.mjs";
+// Server-backed authentication and application drafts; documents remain local.
 import { localData, sessionData, cloneData, makeId } from "./runtime.mjs";
 const KEY = "delora.demo.v1";
 const SESSION_KEY = "delora.session.v1";
@@ -196,7 +197,22 @@ export function update(mutator) {
 export function invalidate() {
   state = undefined;
 }
+let serverAuth = false;
+let serverUser = null;
+export function useServerAuth(user) {
+  serverAuth = true;
+  serverUser = user ? {
+    ...user.business,
+    id: user.role === "admin" ? "admin" : user.is_demo ? "demo-" + user.business.type : "user-" + user.id,
+    email: user.email,
+    role: user.role,
+    registration: user.business?.registration || "",
+  } : null;
+  // Remove the old browser-only sign-in marker during migration.
+  sessionData.removeItem(SESSION_KEY);
+}
 export function session() {
+  if (serverAuth) return serverUser ? { id: serverUser.id, role: serverUser.role } : null;
   try {
     return JSON.parse(sessionData.getItem(SESSION_KEY)) || null;
   } catch {
@@ -204,13 +220,15 @@ export function session() {
   }
 }
 export function login(id) {
+  if (serverAuth) throw Error("Используйте серверную авторизацию");
   sessionData.setItem(SESSION_KEY, JSON.stringify({ id }));
 }
 export function logout() {
+  serverUser = null;
   sessionData.removeItem(SESSION_KEY);
 }
 export const currentUser = () =>
-  getState().users.find((u) => u.id === session()?.id);
+  serverAuth ? serverUser : getState().users.find((u) => u.id === session()?.id);
 export const ownApplications = () =>
   getState().applications.filter((a) => a.ownerId === session()?.id);
 export const ownDocuments = () =>
@@ -376,7 +394,7 @@ export async function readDocument(id) {
 }
 
 
-// Development-only server bridge for the two synthetic accounts.
+// Application synchronization uses the same session and CSRF token as auth.
 const serverIds = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const serverOwners = ["demo-llc", "demo-ip"];
 const draftsInFlight = new Map();
@@ -384,6 +402,7 @@ const queue = new Map();
 const resolvedIds = new Map();
 function demoOwner() {
   const owner = session()?.id;
+  if (serverAuth) return serverUser?.role === "client" ? owner : null;
   return serverOwners.includes(owner) ? owner : null;
 }
 function perform(owner, task) {
@@ -393,16 +412,8 @@ function perform(owner, task) {
   return current;
 }
 async function serverRequest(owner, path, options = {}) {
-  const response = await fetch(path, {
-    ...options,
-    headers: { "X-Demo-User-Id": owner, ...(options.body ? { "Content-Type": "application/json" } : {}) },
-  });
-  if (!response.ok) {
-    let detail;
-    try { detail = (await response.json()).detail; } catch { /* non-JSON error */ }
-    throw Error(typeof detail === "string" ? detail : `HTTP ${response.status}: не удалось сохранить заявку`);
-  }
-  return response.json();
+  if (!owner || session()?.id !== owner) throw Error("Сессия изменилась. Войдите заново.");
+  return apiRequest(path, { method: options.method, body: options.body ? JSON.parse(options.body) : undefined });
 }
 function payload(row) {
   const nullable = value => value === "" || value == null ? null : Number(value);
@@ -452,7 +463,7 @@ export async function restoreServerApplications() {
       const old = known.get(row.id);
       known.set(row.id, {
         ...old, ...row, ownerId: owner,
-        profile: old?.profile || cloneData(s.users.find(u => u.id === owner)),
+        profile: old?.profile || cloneData(currentUser()),
         documentIds: old?.documentIds || [],
         history: old?.history || [{ text: row.status === "draft" ? "Черновик сохранён" : "Заявка отправлена", at: row.createdAt }],
       });

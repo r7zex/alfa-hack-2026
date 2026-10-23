@@ -19,7 +19,7 @@ class LoanApplication(Base):
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    # Synthetic demo owner key. Replace with FK to users after auth is integrated.
+    # Server-derived account key; legacy synthetic keys are preserved.
     owner_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     product_id: Mapped[str] = mapped_column(String(40), nullable=False)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)

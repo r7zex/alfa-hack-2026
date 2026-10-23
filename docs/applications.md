@@ -1,3 +1,14 @@
+# Integration with server authentication
+
+After merging feat/auth, the routes below use the authenticated client session and
+CSRF protection. Application ownership comes from the account in the database.
+The previous X-Demo-User-Id header is no longer accepted as authentication.
+Product rules, draft autosave, currentStep and submission behavior are preserved.
+All schema setup now runs through Alembic at container startup; app.db.init remains
+a compatible command for applying the same migrations. Existing drafts survive
+migration. The descriptions of demo headers and browser-only accounts below
+record the original increment. See [auth.md](auth.md) for the current login flow.
+
 # Credit applications backend — first increment
 
 This is a **synthetic demonstration**, not a real credit underwriting system.

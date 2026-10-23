@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     db_name: str = "alfa_hack"
     db_user: str = "alfa_demo"
     db_password: SecretStr
+    session_cookie_name: str = "delora_session"
+    csrf_cookie_name: str = "delora_csrf"
+    session_ttl_seconds: int = Field(default=604800, ge=60, le=2592000)
+    cookie_secure: bool = False
+    demo_auth_enabled: bool = False
+    auth_requests_per_minute: int = Field(default=30, ge=1, le=1000)
+    auth_email_requests_per_minute: int = Field(default=10, ge=1, le=1000)
 
     @property
     def database_url(self) -> str:
