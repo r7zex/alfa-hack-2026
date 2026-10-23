@@ -2,7 +2,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.models import UserRole
+from app.models.auth import UserRole
 
 
 class LoginRequest(BaseModel):

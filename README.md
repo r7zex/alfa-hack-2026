@@ -141,7 +141,7 @@ Smoke-тесты не требуют работающей БД. Ручная п�
 ## Миграции базы данных
 
 Модели находятся в `app/models/user.py` и `app/models/business.py`.
-Пакет `app.models` импортирует все модели в общую `Base.metadata`,
+Модуль `app.models.auth` импортирует все модели в общую `Base.metadata`,
 которую использует `alembic/env.py`.
 
 После настройки `.env` и запуска PostgreSQL выполните из корня проекта:
