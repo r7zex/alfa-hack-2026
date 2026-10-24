@@ -9,7 +9,22 @@ from types import SimpleNamespace
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import (
+    CHAR,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Index,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    Text,
+    create_engine,
+    func,
+    inspect,
+    text,
+)
 
 from app.models.auth import Base
 
@@ -116,7 +131,6 @@ def test_incremental_auth_upgrade_preserves_existing_accounts(tmp_path, monkeypa
 @pytest.mark.parametrize("legacy_step", [True, False])
 def test_existing_loan_drafts_survive_auth_merge(tmp_path, monkeypatch, legacy_step):
     from uuid import uuid4
-    from app.models.loan_application import LoanApplication
 
     url = "sqlite:///" + (tmp_path / "legacy-loans.sqlite").as_posix()
     monkeypatch.setattr(
@@ -125,23 +139,58 @@ def test_existing_loan_drafts_survive_auth_merge(tmp_path, monkeypatch, legacy_s
     config = Config(str(ROOT / "alembic.ini"))
     engine = create_engine(url)
     try:
-        with engine.begin() as connection:
-            connection.execute(text(
-                "CREATE TABLE loan_applications ("
-                "id CHAR(32) PRIMARY KEY, owner_id VARCHAR(100) NOT NULL, "
-                "product_id VARCHAR(40) NOT NULL, amount INTEGER NOT NULL, "
-                "months INTEGER NOT NULL, purpose TEXT, revenue INTEGER, expenses INTEGER, debt_payment INTEGER, status VARCHAR(20) NOT NULL, "
-                "created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, "
-                "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, "
-                "current_step INTEGER NOT NULL DEFAULT 0, "
-                "CONSTRAINT loan_amount_positive CHECK (amount > 0), "
-                "CONSTRAINT loan_months_positive CHECK (months > 0), "
-                "CONSTRAINT loan_revenue_nonnegative CHECK (revenue IS NULL OR revenue >= 0), "
-                "CONSTRAINT loan_expenses_nonnegative CHECK (expenses IS NULL OR expenses >= 0), "
-                "CONSTRAINT loan_debt_nonnegative CHECK (debt_payment IS NULL OR debt_payment >= 0))"
-            ))
-        with engine.begin() as connection:
-            connection.execute(text("CREATE INDEX ix_loan_applications_owner_id ON loan_applications (owner_id)"))
+        # Compile the legacy schema with SQLAlchemy: inline SQL with all
+        # CHECK clauses on one line can confuse SQLite constraint reflection
+        # during Alembic's batch table recreation.
+        legacy_table = Table(
+            "loan_applications",
+            MetaData(),
+            Column("id", CHAR(32), primary_key=True),
+            Column("owner_id", String(100), nullable=False),
+            Column("product_id", String(40), nullable=False),
+            Column("amount", Integer, nullable=False),
+            Column("months", Integer, nullable=False),
+            Column("purpose", Text),
+            Column("revenue", Integer),
+            Column("expenses", Integer),
+            Column("debt_payment", Integer),
+            Column("status", String(20), nullable=False),
+            Column(
+                "created_at", DateTime(timezone=True),
+                server_default=func.now(), nullable=False,
+            ),
+            Column(
+                "updated_at", DateTime(timezone=True),
+                server_default=func.now(), nullable=False,
+            ),
+            Column("current_step", Integer, server_default="0", nullable=False),
+            CheckConstraint("amount > 0", name="loan_amount_positive"),
+            CheckConstraint("months > 0", name="loan_months_positive"),
+            CheckConstraint(
+                "revenue IS NULL OR revenue >= 0",
+                name="loan_revenue_nonnegative",
+            ),
+            CheckConstraint(
+                "expenses IS NULL OR expenses >= 0",
+                name="loan_expenses_nonnegative",
+            ),
+            CheckConstraint(
+                "debt_payment IS NULL OR debt_payment >= 0",
+                name="loan_debt_nonnegative",
+            ),
+            Index("ix_loan_applications_owner_id", "owner_id"),
+        )
+        legacy_table.create(engine)
+        assert {
+            check["name"]
+            for check in inspect(engine).get_check_constraints("loan_applications")
+        } == {
+            "loan_amount_positive",
+            "loan_months_positive",
+            "loan_revenue_nonnegative",
+            "loan_expenses_nonnegative",
+            "loan_debt_nonnegative",
+        }
         row_id = uuid4()
         with engine.begin() as connection:
             connection.execute(
