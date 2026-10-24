@@ -125,19 +125,31 @@ def test_existing_loan_drafts_survive_auth_merge(tmp_path, monkeypatch, legacy_s
     config = Config(str(ROOT / "alembic.ini"))
     engine = create_engine(url)
     try:
-        LoanApplication.__table__.create(engine)
+        with engine.begin() as connection:
+            connection.execute(text(
+                "CREATE TABLE loan_applications ("
+                "id CHAR(32) PRIMARY KEY, owner_id VARCHAR(100) NOT NULL, "
+                "product_id VARCHAR(40) NOT NULL, amount INTEGER NOT NULL, "
+                "months INTEGER NOT NULL, purpose TEXT, revenue INTEGER, expenses INTEGER, debt_payment INTEGER, status VARCHAR(20) NOT NULL, "
+                "created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, "
+                "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, "
+                "current_step INTEGER NOT NULL DEFAULT 0, "
+                "CONSTRAINT loan_amount_positive CHECK (amount > 0), "
+                "CONSTRAINT loan_months_positive CHECK (months > 0), "
+                "CONSTRAINT loan_revenue_nonnegative CHECK (revenue IS NULL OR revenue >= 0), "
+                "CONSTRAINT loan_expenses_nonnegative CHECK (expenses IS NULL OR expenses >= 0), "
+                "CONSTRAINT loan_debt_nonnegative CHECK (debt_payment IS NULL OR debt_payment >= 0))"
+            ))
+        with engine.begin() as connection:
+            connection.execute(text("CREATE INDEX ix_loan_applications_owner_id ON loan_applications (owner_id)"))
         row_id = uuid4()
         with engine.begin() as connection:
             connection.execute(
-                LoanApplication.__table__.insert().values(
-                    id=row_id,
-                    owner_id="demo-ip",
-                    product_id="working",
-                    amount=1000000,
-                    months=12,
-                    status="draft",
-                    current_step=2,
-                )
+                text(
+                    "INSERT INTO loan_applications (id, owner_id, product_id, amount, months, status, current_step) "
+                    "VALUES (:id, 'demo-ip', 'working', 1000000, 12, 'draft', 2)"
+                ),
+                {"id": row_id.hex}
             )
             if not legacy_step:
                 connection.execute(
@@ -151,6 +163,7 @@ def test_existing_loan_drafts_survive_auth_merge(tmp_path, monkeypatch, legacy_s
                     "SELECT owner_id, amount, status, current_step FROM loan_applications"
                 )
             ).one() == ("demo-ip", 1000000, "draft", 2 if legacy_step else 0)
+            assert connection.scalar(text("SELECT business_id FROM loan_applications")) is None
         command.upgrade(config, "head")
         with engine.connect() as connection:
             assert (

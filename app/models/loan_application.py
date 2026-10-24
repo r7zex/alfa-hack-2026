@@ -1,11 +1,18 @@
 """Persisted loan application; financial values are whole roubles."""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, Text, Uuid, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, Uuid, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.business import Business
+    from app.models.user import User
 
 
 class LoanApplication(Base):
@@ -19,8 +26,19 @@ class LoanApplication(Base):
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    # Server-derived account key; legacy synthetic keys are preserved.
-    owner_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    # Legacy key for pre-Auth drafts only. New applications use integer FKs.
+    owner_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    # Nullable to preserve drafts until their original account signs in.
+    business_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("businesses.id", name="fk_loan_business"),
+        nullable=True, index=True,
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", name="fk_loan_creator"),
+        nullable=True, index=True,
+    )
+    business: Mapped[Business | None] = relationship(back_populates="loan_applications")
+    creator: Mapped[User | None] = relationship(back_populates="created_applications")
     product_id: Mapped[str] = mapped_column(String(40), nullable=False)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     months: Mapped[int] = mapped_column(Integer, nullable=False)

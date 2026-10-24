@@ -1,3 +1,32 @@
+# Credit applications — authenticated ownership
+
+Application endpoints now use cookie-based authentication through `require_client`, including CSRF validation from Auth.
+
+- `LoanApplication.id` remains UUID.
+- New applications persist `business_id` (FK to `businesses.id`) and `created_by_user_id` (FK to `users.id`), both integer IDs derived from the authenticated session, never from client request bodies.
+- Lists, reads, updates, and submission are scoped to the signed-in user's `business_id`. Multiple users belonging to a business can access that business's applications.
+- Both foreign keys remain nullable at database level only for pre-migration rows. New records always populate them.
+- The legacy `owner_id` is kept as a nullable transition column. The migration backfills records previously keyed `user-<id>` using the existing users table. Previously unclaimed `demo-ip`/`demo-llc` drafts are assigned to their matching demo business on authenticated access; they are not made accessible to ordinary accounts.
+- There is no supported unauthenticated `X-Demo-User-Id` access.
+- `python -m app.db.init` (or `python -m alembic upgrade head`) applies versioned migrations; do not use `create_all` for production schema changes.
+- Client documents and the analyst workspace are still separate demo/browser-storage functionality; this change does not implement server-side document upload, scoring or administrator decisions.
+
+## Development verification
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest tests/test_credit.py tests/test_auth.py tests/test_migrations.py tests/test_db_models.py -q
+node --test tests/frontend.test.mjs tests/frontend-auth.test.mjs
+python -m alembic upgrade head
+python -m alembic check
+```
+
+Use a disposable test database for Auth tests: its test fixture drops and recreates tables. Never point `TEST_AUTH_DATABASE_URL` at a database containing data you need.
+
+Before merging this branch, test: registering a real business and creating a draft, reopening from a second session, a second authorized user in the same business reading it, another business receiving 404, existing `user-<id>` drafts after migration, and `demo-ip` legacy drafts after demo login.
+
+---
+
 # Integration with server authentication
 
 After merging feat/auth, the routes below use the authenticated client session and

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.loan_application import LoanApplication
     from app.models.user import User
 
 
@@ -51,6 +52,9 @@ class Business(Base):
     registration: Mapped[date | None] = mapped_column(Date)
 
     users: Mapped[list[User]] = relationship(
+        back_populates="business",
+    )
+    loan_applications: Mapped[list[LoanApplication]] = relationship(
         back_populates="business",
     )
 

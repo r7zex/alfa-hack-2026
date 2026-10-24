@@ -3,6 +3,7 @@
 import asyncio
 import os
 from datetime import timedelta
+from uuid import UUID
 
 os.environ.setdefault("DB_PASSWORD", "unit-test-only")
 
@@ -494,6 +495,14 @@ def test_applications_use_the_authenticated_owner_and_csrf(auth_env):
         response = first.post("/api/applications", json=payload, headers=csrf(first))
         assert response.status_code == 201, response.text
         application_id = response.json()["id"]
+        async def check_links(db):
+            from app.models.loan_application import LoanApplication
+            row = await db.get(LoanApplication, UUID(application_id))
+            user = await db.scalar(select(User).where(User.email == "client@example.com"))
+            assert row.business_id == user.business_id
+            assert row.created_by_user_id == user.id
+            assert row.owner_id is None
+        run_db(auth_env[0], check_links)
         assert first.get("/api/applications").json()[0]["id"] == application_id
         assert (
             second.get(
@@ -555,3 +564,20 @@ def test_demo_auth_keeps_legacy_application_ownership(auth_env):
         assert response.status_code == 200
         assert response.json()[0]["id"] == application_id
         assert response.json()[0]["currentStep"] == 2
+
+def test_same_business_colleague_can_access_loan(auth_env):
+    factory, _ = auth_env
+    from app.security import hash_password
+    with TestClient(app) as first, TestClient(app) as colleague:
+        assert signup(first).status_code == 201
+        async def add_colleague(db):
+            user = await db.scalar(select(User).where(User.email == "client@example.com"))
+            db.add(User(email="colleague@example.com", password_hash=hash_password(PASSWORD), business_id=user.business_id))
+            await db.commit()
+        run_db(factory, add_colleague)
+        response = first.post("/api/applications", json={"productId": "working", "amount": 1000000, "months": 12}, headers=csrf(first))
+        assert response.status_code == 201
+        loan_id = response.json()["id"]
+        assert colleague.post("/api/auth/login", json={"email": "colleague@example.com", "password": PASSWORD}).status_code == 200
+        assert colleague.get("/api/applications").json()[0]["id"] == loan_id
+        assert colleague.patch("/api/applications/" + loan_id, json={"currentStep": 2}, headers=csrf(colleague)).status_code == 200
