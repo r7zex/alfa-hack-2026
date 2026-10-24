@@ -17,6 +17,17 @@ def upgrade() -> None:
         batch.create_index("ix_loan_applications_business_id", ["business_id"])
         batch.create_index("ix_loan_applications_created_by_user_id", ["created_by_user_id"])
 
+    # Auth already issued owner keys like "user-17" before this migration.
+    # Backfill those existing rows using verified users from the same database.
+    op.execute(sa.text(
+        "UPDATE loan_applications SET "
+        "created_by_user_id = (SELECT users.id FROM users "
+        "WHERE loan_applications.owner_id = 'user-' || users.id), "
+        "business_id = (SELECT users.business_id FROM users "
+        "WHERE loan_applications.owner_id = 'user-' || users.id) "
+        "WHERE owner_id LIKE 'user-%'"
+    ))
+
 def downgrade() -> None:
     op.execute(sa.text(
         "UPDATE loan_applications SET owner_id = 'user-' || created_by_user_id "
