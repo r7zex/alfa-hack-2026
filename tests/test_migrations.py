@@ -125,19 +125,24 @@ def test_existing_loan_drafts_survive_auth_merge(tmp_path, monkeypatch, legacy_s
     config = Config(str(ROOT / "alembic.ini"))
     engine = create_engine(url)
     try:
-        LoanApplication.__table__.create(engine)
+        with engine.begin() as connection:
+            connection.execute(text(
+                "CREATE TABLE loan_applications ("
+                "id CHAR(32) PRIMARY KEY, owner_id VARCHAR(100) NOT NULL, "
+                "product_id VARCHAR(40) NOT NULL, amount INTEGER NOT NULL, "
+                "months INTEGER NOT NULL, status VARCHAR(20) NOT NULL, "
+                "created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, "
+                "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, "
+                "current_step INTEGER NOT NULL DEFAULT 0)"
+            ))
         row_id = uuid4()
         with engine.begin() as connection:
             connection.execute(
-                LoanApplication.__table__.insert().values(
-                    id=row_id,
-                    owner_id="demo-ip",
-                    product_id="working",
-                    amount=1000000,
-                    months=12,
-                    status="draft",
-                    current_step=2,
-                )
+                text(
+                    "INSERT INTO loan_applications (id, owner_id, product_id, amount, months, status, current_step) "
+                    "VALUES (:id, 'demo-ip', 'working', 1000000, 12, 'draft', 2)"
+                ),
+                {"id": row_id.hex}
             )
             if not legacy_step:
                 connection.execute(
@@ -151,6 +156,7 @@ def test_existing_loan_drafts_survive_auth_merge(tmp_path, monkeypatch, legacy_s
                     "SELECT owner_id, amount, status, current_step FROM loan_applications"
                 )
             ).one() == ("demo-ip", 1000000, "draft", 2 if legacy_step else 0)
+            assert connection.scalar(text("SELECT business_id FROM loan_applications")) is None
         command.upgrade(config, "head")
         with engine.connect() as connection:
             assert (

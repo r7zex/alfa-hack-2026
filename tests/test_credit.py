@@ -68,7 +68,7 @@ def test_only_draft_can_be_updated() -> None:
 
     async def check() -> None:
         with pytest.raises(HTTPException) as exc:
-            await service.update(uuid4(), "demo-llc", ApplicationUpdate(amount=150_000))
+            await service.update(uuid4(), 123, ApplicationUpdate(amount=150_000))
         assert exc.value.status_code == 409
 
     asyncio.run(check())
@@ -109,10 +109,10 @@ def test_can_save_step_and_refuses_null_step() -> None:
     service.repo.save = AsyncMock(side_effect=lambda application: application)
 
     async def check() -> None:
-        result = await service.update(uuid4(), "demo-llc", ApplicationUpdate(currentStep=2))
+        result = await service.update(uuid4(), 123, ApplicationUpdate(currentStep=2))
         assert result.current_step == 2
         with pytest.raises(HTTPException) as exc:
-            await service.update(uuid4(), "demo-llc", ApplicationUpdate(currentStep=None))
+            await service.update(uuid4(), 123, ApplicationUpdate(currentStep=None))
         assert exc.value.status_code == 422
 
     asyncio.run(check())
@@ -129,7 +129,15 @@ def test_incomplete_application_cannot_be_submitted() -> None:
 
     async def check() -> None:
         with pytest.raises(HTTPException) as exc:
-            await service.submit(uuid4(), "user-1")
+            await service.submit(uuid4(), 123)
         assert exc.value.status_code == 422
 
+    asyncio.run(check())
+
+def test_real_relationships_in_new_application() -> None:
+    service = ApplicationService(AsyncMock())
+    service.repo.add = AsyncMock(side_effect=lambda item: item)
+    async def check():
+        item = await service.create(42, 7, ApplicationCreate(productId="working", amount=1000000, months=12))
+        assert (item.business_id, item.created_by_user_id, item.owner_id) == (42, 7, None)
     asyncio.run(check())

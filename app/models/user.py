@@ -12,6 +12,7 @@ from app.models.session import AuthSession
 
 if TYPE_CHECKING:
     from app.models.business import Business
+    from app.models.loan_application import LoanApplication
 
 
 class UserRole(str, Enum):
@@ -55,4 +56,8 @@ class User(Base):
 
     sessions: Mapped[list[AuthSession]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    created_applications: Mapped[list[LoanApplication]] = relationship(
+        back_populates="creator",
     )
