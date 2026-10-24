@@ -37,6 +37,37 @@ class ApplicationRead(BaseModel):
     expenses: int | None
     debt_payment: int | None = Field(serialization_alias="debtPayment")
     status: str
+    decision_comment: str | None = Field(default=None, serialization_alias="comment")
+    alternative_amount: int | None = Field(default=None, serialization_alias="alternativeAmount")
+    decided_at: datetime | None = Field(default=None, serialization_alias="decidedAt")
     current_step: int = Field(serialization_alias="currentStep")
     created_at: datetime = Field(serialization_alias="createdAt")
     updated_at: datetime = Field(serialization_alias="updatedAt")
+
+
+class BusinessSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    type: str
+    name: str
+    inn: str
+    okved: str | None = None
+    contact: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class CreatorSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: str
+
+
+class AnalystApplicationRead(ApplicationRead):
+    business_id: int | None = Field(default=None, serialization_alias="businessId")
+    created_by_user_id: int | None = Field(default=None, serialization_alias="createdByUserId")
+    decided_by_user_id: int | None = Field(default=None, serialization_alias="decidedByUserId")
+    business: BusinessSummary | None = None
+    creator: CreatorSummary | None = None

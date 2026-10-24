@@ -13,7 +13,6 @@ import {
   ownApplications,
   addDocument,
   readDocument,
-  decide,
   acceptOffer,
   restoreServerApplications,
 } from "./js/store.mjs";
@@ -42,7 +41,7 @@ import {
   scheduleWizardAutoSave,
   autoSaveWizard,
 } from "./js/forms.mjs";
-import { analyst, analystRows } from "./js/analyst.mjs";
+import { analyst, loadAnalyst, resetAnalyst, changeAnalystFilter, sendAnalystDecision, analystPendingCount } from "./js/analyst.mjs";
 import { storageIsTemporary } from "./js/runtime.mjs";
 
 import { restoreAuth, onAuthChange, signIn, demoSignIn, signOut, saveProfile, changePassword, demoAuthEnabled } from "./js/auth.mjs";
@@ -71,7 +70,7 @@ function navItem(id, label, image, active, count = "") {
 }
 function shell(content, user, section, admin) {
   const count = admin
-    ? getState().applications.filter((a) => a.status === "pending").length
+    ? analystPendingCount()
     : ownApplications().length;
   return `<a class="skip-link" href="#main-content" data-action="skip-content">Перейти к содержимому</a><div class="app-shell"><aside class="sidebar">${brand()}<nav aria-label="Основная навигация">${admin ? navItem("current", "Текущие заявки", "file", section === "current", count) + navItem("history", "История заявок", "history", section === "history") : navItem("home", "Главная", "home", section === "home") + navItem("products", "Подбор кредита", "search", section === "products") + navItem("applications", "Мои заявки", "file", section === "applications", count) + navItem("profile", "Личный кабинет", "user", section === "profile")}</nav><div class="sidebar-footer"><div class="demo-note"><span class="demo-dot"></span>Демо-версия сервиса<small>Синтетические данные</small></div>${button(icon("exit") + " Выйти", "logout", "text")}</div></aside><div class="workspace"><header class="topbar"><span>${admin ? "Рабочее место аналитика" : "Кабинет предпринимателя"}</span><div class="topbar-account">${admin ? `<span class="analyst-label">${icon("shield")} Кредитный аналитик</span>` : `<a href="#/profile">${icon(user.type === "ip" ? "user" : "building")}<strong>${e(user.name)}</strong>${icon("chevron")}</a>`}${button(icon("exit"), "logout", "icon-button mobile-logout", 'aria-label="Выйти"')}</div></header><main id="main-content" class="main-content" tabindex="-1">${content}</main></div></div>`;
 }
@@ -92,6 +91,7 @@ function render() {
     let content;
     if (admin) {
       section = section === "history" ? "history" : "current";
+      changeAnalystFilter("status", section === "history" ? "all" : "pending");
       content = analyst(section === "history");
     } else if (section === "products")
       content = parts[1] ? productDetail(parts[1], user) : products();
@@ -130,7 +130,11 @@ function navigate(to) {
 }
 function enter(user) {
   navigate(user.role === "admin" ? "current" : "home");
-  if (user.role !== "admin") restoreServerApplications().then(render).catch(error => toast(`Серверные заявки недоступны: ${error.message}`, true));
+  if (user.role === "admin") {
+    changeAnalystFilter("status", route().parts[0] === "history" ? "all" : "pending");
+    loadAnalyst().then(render).catch(error => toast(`Заявки аналитика недоступны: ${error.message}`, true));
+  }
+  else restoreServerApplications().then(render).catch(error => toast(`Серверные заявки недоступны: ${error.message}`, true));
 }
 async function download(id) {
   const doc = getState().documents.find((d) => d.id === id);
@@ -166,8 +170,10 @@ document.addEventListener("click", async (event) => {
     else if (action === "logout" || action === "logout-all") {
       closeModal();
       await signOut(action === "logout-all");
+      resetAnalyst();
       navigate("home");
-    } else if (action === "new-application") startWizard();
+    } else if (action === "analyst-refresh") { await loadAnalyst(); render(); }
+    else if (action === "new-application") startWizard();
     else if (action === "close-modal") { if (getWizard()) await autoSaveWizard(); closeModal(); }
     else if (action === "wizard-product") { wizardProduct(id); scheduleWizardAutoSave(); }
     else if (action === "wizard-back") await wizardBack();
@@ -226,12 +232,10 @@ document.addEventListener("submit", async (event) => {
     } else if (form.matches(".decision-form")) {
       if (data.status === "rejected" && !data.comment.trim())
         throw Error("При отказе укажите причину в комментарии");
-      decide(form.dataset.id, {
+      await sendAnalystDecision(form.dataset.id, {
         status: data.status,
         comment: data.comment.trim(),
-        alternativeAmount: data.alternativeAmount
-          ? +data.alternativeAmount
-          : null,
+        alternativeAmount: data.alternativeAmount ? +data.alternativeAmount : null,
       });
       render();
       toast("Решение сохранено. Клиент видит обратную связь.");
@@ -260,6 +264,7 @@ function calculate() {
     ? `<p class="form-error">${e(error)}</p>`
     : calculationHtml(p, +data.amount, +data.months, +(data.days || 30));
 }
+let analystSearchTimer;
 document.addEventListener("input", (event) => {
   const input = event.target;
   if (input.closest("#calculator")) {
@@ -268,11 +273,14 @@ document.addEventListener("input", (event) => {
     if (input.name === "amount") form.elements.amountRange.value = input.value;
     calculate();
   }
-  if (input.id === "analyst-search")
-    document.getElementById("analyst-list").innerHTML = analystRows(
-      document.getElementById("analyst-list").dataset.history === "true",
-      input.value,
-    );
+  if (input.matches("[data-analyst-search]")) {
+    clearTimeout(analystSearchTimer);
+    analystSearchTimer = setTimeout(async () => {
+      changeAnalystFilter("query", input.value);
+      try { await loadAnalyst(); render(); }
+      catch (error) { toast(error.message, true); }
+    }, 350);
+  }
   if (input.closest("#wizard-form")) scheduleWizardAutoSave();
   if (input.closest(".decision-form") && input.name === "status")
     input.form.elements.comment.required = input.value === "rejected";
@@ -280,6 +288,12 @@ document.addEventListener("input", (event) => {
 document.addEventListener("change", async (event) => {
   const input = event.target;
   if (input.closest("#wizard-form") && !input.matches("[data-upload]")) scheduleWizardAutoSave();
+  if (input.matches("[data-analyst-filter]")) {
+    changeAnalystFilter(input.dataset.analystFilter, input.value);
+    try { await loadAnalyst(); render(); }
+    catch (error) { toast(error.message, true); }
+    return;
+  }
   if (!input.matches("[data-upload]") || !input.files?.[0]) return;
   input.disabled = true;
   try {
@@ -303,7 +317,10 @@ document.addEventListener("change", async (event) => {
 });
 window.addEventListener("delora:refresh", render);
 window.addEventListener("hashchange", () => {
-  render();
+  if (session()?.id === "admin") {
+    changeAnalystFilter("status", route().parts[0] === "history" ? "all" : "pending");
+    loadAnalyst().then(render).catch(error => toast(error.message, true));
+  } else render();
   if (!route().params.has("documents")) window.scrollTo({ top: 0 });
 });
 window.addEventListener("storage", (event) => {
@@ -314,7 +331,11 @@ window.addEventListener("storage", (event) => {
 });
 restoreAuth().then(async () => {
   render();
-  if (session()?.id && session().id !== "admin") {
+  if (session()?.id === "admin") {
+    changeAnalystFilter("status", route().parts[0] === "history" ? "all" : "pending");
+    try { await loadAnalyst(); render(); }
+    catch (error) { toast(`Заявки аналитика недоступны: ${error.message}`, true); }
+  } else if (session()?.id) {
     try { await restoreServerApplications(); render(); }
     catch (error) { toast(`Серверные заявки недоступны: ${error.message}`, true); }
   }
