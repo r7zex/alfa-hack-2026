@@ -12,6 +12,7 @@ from app.api.applications import router as applications_router
 from app.api.products import router as products_router
 from app.frontend import FrontendFiles
 from app.api.auth import router as auth_router
+from app.api.analyst import router as analyst_router
 
 
 @asynccontextmanager
@@ -59,6 +60,7 @@ async def ready() -> dict[str, str]:
 
 app.include_router(products_router)
 app.include_router(applications_router)
+app.include_router(analyst_router)
 
 
 # Keep this mount after API routes so /health, /ready and future routers win.

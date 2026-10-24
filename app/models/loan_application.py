@@ -38,7 +38,18 @@ class LoanApplication(Base):
         nullable=True, index=True,
     )
     business: Mapped[Business | None] = relationship(back_populates="loan_applications")
-    creator: Mapped[User | None] = relationship(back_populates="created_applications")
+    creator: Mapped[User | None] = relationship(
+        back_populates="created_applications",
+        foreign_keys=[created_by_user_id],
+    )
+    decided_by_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", name="fk_loan_decider"),
+        nullable=True, index=True,
+    )
+    decider: Mapped[User | None] = relationship(foreign_keys=[decided_by_user_id])
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_comment: Mapped[str | None] = mapped_column(Text)
+    alternative_amount: Mapped[int | None] = mapped_column(Integer)
     product_id: Mapped[str] = mapped_column(String(40), nullable=False)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     months: Mapped[int] = mapped_column(Integer, nullable=False)

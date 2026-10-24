@@ -465,9 +465,27 @@ export async function restoreServerApplications() {
         ...old, ...row, ownerId: owner,
         profile: old?.profile || cloneData(currentUser()),
         documentIds: old?.documentIds || [],
-        history: old?.history || [{ text: row.status === "draft" ? "Черновик сохранён" : "Заявка отправлена", at: row.createdAt }],
+        history: reconcileHistory(old, row),
       });
     }
     s.applications = [...known.values()];
   });
+}
+
+function reconcileHistory(old, row) {
+  const history = normalizeDraftHistory(old?.history || [
+    { text: "Черновик создан", at: row.createdAt },
+  ]);
+  if (row.status !== "draft" &&
+      !history.some(h => h.text === "Заявка отправлена на рассмотрение")) {
+    history.push({ text: "Заявка отправлена на рассмотрение", at: row.updatedAt });
+  }
+  if (["approved", "rejected"].includes(row.status) && row.decidedAt &&
+      !history.some(h => h.at === row.decidedAt)) {
+    history.push({
+      text: row.status === "approved" ? "Аналитик одобрил заявку" : "Аналитик отказал по заявке",
+      at: row.decidedAt,
+    });
+  }
+  return history;
 }

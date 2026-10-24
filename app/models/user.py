@@ -60,4 +60,5 @@ class User(Base):
 
     created_applications: Mapped[list[LoanApplication]] = relationship(
         back_populates="creator",
+        foreign_keys="LoanApplication.created_by_user_id",
     )
