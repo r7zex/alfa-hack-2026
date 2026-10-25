@@ -2751,3 +2751,15 @@ td .text-link {
     transform: none;
   }
 }
+
+/* Analyst filters */
+.analyst-filters { display:flex; flex-wrap:wrap; gap:12px; align-items:end; margin:18px 0 22px; }
+.analyst-filters label { display:grid; gap:7px; font-size:12px; color:var(--muted); flex:1 1 175px; }
+.analyst-filters select, .analyst-filters input {
+  width:100%; min-height:44px; border:1px solid var(--line);
+  border-radius:8px; background:var(--surface); color:var(--ink);
+  padding:10px 12px; font:inherit; font-size:13px;
+}
+.analyst-filters .button { min-height:44px; }
+.review-row .decision-form { min-width:0; }
+@media(max-width:780px) { .analyst-filters { flex-direction:column; align-items:stretch; } }

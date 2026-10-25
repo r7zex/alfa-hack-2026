@@ -57,6 +57,13 @@ async def ready() -> dict[str, str]:
     return {"status": "ready", "database": "connected"}
 
 
+from app.api import analyst, documents, scoring, assistant, pipeline
+
+app.include_router(analyst.router)
+app.include_router(documents.router)
+app.include_router(scoring.router)
+app.include_router(assistant.router)
+app.include_router(pipeline.router)
 app.include_router(products_router)
 app.include_router(applications_router)
 

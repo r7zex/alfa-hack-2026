@@ -13,8 +13,9 @@ import {
   ownApplications,
   addDocument,
   readDocument,
-  decide,
   acceptOffer,
+  dealAction,
+  retryProcessing,
   restoreServerApplications,
 } from "./js/store.mjs";
 import { brand, icon, button, toast, closeModal } from "./js/ui.mjs";
@@ -42,11 +43,14 @@ import {
   scheduleWizardAutoSave,
   autoSaveWizard,
 } from "./js/forms.mjs";
-import { analyst, analystRows } from "./js/analyst.mjs";
+import { analyst, loadAnalyst, resetAnalyst, changeAnalystFilter, sendAnalystDecision, analystPendingCount } from "./js/analyst.mjs";
+import { assistant, mountAssistant, clearAssistant } from "./js/assistant.mjs";
+import { apiRequest } from "./js/auth.mjs";
+import { loadProducts, money, productById as lookupProduct } from "./js/domain.mjs";
 import { storageIsTemporary } from "./js/runtime.mjs";
 
 import { restoreAuth, onAuthChange, signIn, demoSignIn, signOut, saveProfile, changePassword, demoAuthEnabled } from "./js/auth.mjs";
-onAuthChange(useServerAuth);
+onAuthChange(user => { clearAssistant(); resetAnalyst(); useServerAuth(user); });
 useServerAuth(null);
 
 const root = document.getElementById("app");
@@ -57,7 +61,7 @@ function showStorageNotice() {
   const notice = document.createElement("p");
   notice.className = "notice storage-notice";
   notice.textContent =
-    "Временный режим: браузер не разрешил сохранить данные. Изменения будут доступны до обновления страницы.";
+    "Настройки интерфейса доступны до обновления страницы. Заявки и документы сохраняются на сервере.";
   target.prepend(notice);
 }
 function route() {
@@ -71,9 +75,9 @@ function navItem(id, label, image, active, count = "") {
 }
 function shell(content, user, section, admin) {
   const count = admin
-    ? getState().applications.filter((a) => a.status === "pending").length
+    ? analystPendingCount()
     : ownApplications().length;
-  return `<a class="skip-link" href="#main-content" data-action="skip-content">Перейти к содержимому</a><div class="app-shell"><aside class="sidebar">${brand()}<nav aria-label="Основная навигация">${admin ? navItem("current", "Текущие заявки", "file", section === "current", count) + navItem("history", "История заявок", "history", section === "history") : navItem("home", "Главная", "home", section === "home") + navItem("products", "Подбор кредита", "search", section === "products") + navItem("applications", "Мои заявки", "file", section === "applications", count) + navItem("profile", "Личный кабинет", "user", section === "profile")}</nav><div class="sidebar-footer"><div class="demo-note"><span class="demo-dot"></span>Демо-версия сервиса<small>Синтетические данные</small></div>${button(icon("exit") + " Выйти", "logout", "text")}</div></aside><div class="workspace"><header class="topbar"><span>${admin ? "Рабочее место аналитика" : "Кабинет предпринимателя"}</span><div class="topbar-account">${admin ? `<span class="analyst-label">${icon("shield")} Кредитный аналитик</span>` : `<a href="#/profile">${icon(user.type === "ip" ? "user" : "building")}<strong>${e(user.name)}</strong>${icon("chevron")}</a>`}${button(icon("exit"), "logout", "icon-button mobile-logout", 'aria-label="Выйти"')}</div></header><main id="main-content" class="main-content" tabindex="-1">${content}</main></div></div>`;
+  return `<a class="skip-link" href="#main-content" data-action="skip-content">Перейти к содержимому</a><div class="app-shell"><aside class="sidebar">${brand()}<nav aria-label="Основная навигация">${admin ? navItem("current", "Текущие заявки", "file", section === "current", count) + navItem("history", "История заявок", "history", section === "history") : navItem("home", "Главная", "home", section === "home") + navItem("products", "Подбор кредита", "search", section === "products") + navItem("applications", "Мои заявки", "file", section === "applications", count) + navItem("assistant", "ИИ-ассистент", "chat", section === "assistant") + navItem("profile", "Личный кабинет", "user", section === "profile")}</nav><div class="sidebar-footer"><div class="demo-note"><span class="demo-dot"></span>Демо-версия сервиса<small>Синтетические данные</small></div>${button(icon("exit") + " Выйти", "logout", "text")}</div></aside><div class="workspace"><header class="topbar"><span>${admin ? "Рабочее место аналитика" : "Кабинет предпринимателя"}</span><div class="topbar-account">${admin ? `<span class="analyst-label">${icon("shield")} Кредитный аналитик</span>` : `<a href="#/profile">${icon(user.type === "ip" ? "user" : "building")}<strong>${e(user.name)}</strong>${icon("chevron")}</a>`}${button(icon("exit"), "logout", "icon-button mobile-logout", 'aria-label="Выйти"')}</div></header><main id="main-content" class="main-content" tabindex="-1">${content}</main></div></div>`;
 }
 function render() {
   try {
@@ -92,6 +96,7 @@ function render() {
     let content;
     if (admin) {
       section = section === "history" ? "history" : "current";
+      changeAnalystFilter("status", section === "history" ? "all" : "pending");
       content = analyst(section === "history");
     } else if (section === "products")
       content = parts[1] ? productDetail(parts[1], user) : products();
@@ -100,11 +105,13 @@ function render() {
         ? applicationDetail(parts[1])
         : applications(params.get("status") || "all");
     else if (section === "profile") content = profile(user);
+    else if (section === "assistant") content = assistant(user.id);
     else {
       section = "home";
       content = home(user);
     }
     root.innerHTML = shell(content, user, section, admin);
+    if (section === "assistant") mountAssistant(user.id);
     showStorageNotice();
     document.title =
       "Делора - " +
@@ -113,6 +120,7 @@ function render() {
         products: "Подбор кредита",
         applications: "Мои заявки",
         profile: "Личный кабинет",
+        assistant: "ИИ-ассистент",
         current: "Текущие заявки",
         history: "История заявок",
       }[section];
@@ -130,7 +138,11 @@ function navigate(to) {
 }
 function enter(user) {
   navigate(user.role === "admin" ? "current" : "home");
-  if (user.role !== "admin") restoreServerApplications().then(render).catch(error => toast(`Серверные заявки недоступны: ${error.message}`, true));
+  if (user.role === "admin") {
+    changeAnalystFilter("status", route().parts[0] === "history" ? "all" : "pending");
+    loadAnalyst().then(render).catch(error => toast(`Заявки аналитика недоступны: ${error.message}`, true));
+  }
+  else restoreServerApplications().then(render).catch(error => toast(`Серверные заявки недоступны: ${error.message}`, true));
 }
 async function download(id) {
   const doc = getState().documents.find((d) => d.id === id);
@@ -138,7 +150,7 @@ async function download(id) {
   const url = URL.createObjectURL(file);
   const link = document.createElement("a");
   link.href = url;
-  link.download = doc.demo ? doc.name.replace(/\.pdf$/, ".txt") : doc.name;
+  link.download = doc?.name || "document.pdf";
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -166,8 +178,12 @@ document.addEventListener("click", async (event) => {
     else if (action === "logout" || action === "logout-all") {
       closeModal();
       await signOut(action === "logout-all");
+      resetAnalyst();
       navigate("home");
-    } else if (action === "new-application") startWizard();
+    } else if (action === "review-legacy-approval") {
+      await sendAnalystDecision(id, {status: "needs_info", comment: "Прежнее одобрение не содержит версии предложения. Уточните данные и документы для проверки условий."}); render();
+    } else if (action === "analyst-refresh") { await loadAnalyst(); render(); }
+    else if (action === "new-application") startWizard();
     else if (action === "close-modal") { if (getWizard()) await autoSaveWizard(); closeModal(); }
     else if (action === "wizard-product") { wizardProduct(id); scheduleWizardAutoSave(); }
     else if (action === "wizard-back") await wizardBack();
@@ -175,10 +191,14 @@ document.addEventListener("click", async (event) => {
     else if (action === "edit-application") startWizard({ id });
     else if (action === "revise-application") startWizard({ id, revise: true });
     else if (action === "download-document") await download(id);
+    else if (action === "refresh-applications") { await restoreServerApplications(); render(); }
+    else if (action === "retry-processing") { await retryProcessing(id); render(); }
+    else if (action === "decline-offer") { await dealAction(id, "decline"); render(); }
+    else if (action === "disburse-offer") { await dealAction(id, "disburse"); render(); }
     else if (action === "accept-offer") {
-      acceptOffer(id);
+      await acceptOffer(id);
       render();
-      toast("Условия приняты. Учебный сценарий завершён.");
+      toast("Условия приняты. Ознакомьтесь с демо-договором.");
     }
   } catch (error) {
     toast(error.message, true);
@@ -190,7 +210,16 @@ document.addEventListener("submit", async (event) => {
   try {
     if (!form.reportValidity()) return;
     const data = Object.fromEntries(new FormData(form));
-    if (form.id === "auth-form") {
+    if (form.id === "offer-action-form") {
+      await dealAction(form.dataset.id, form.dataset.operation, data.acknowledged === "on");
+      render();
+      toast(form.dataset.operation === "sign" ? "Демо-договор подписан" : "Условия приняты");
+    } else if (form.id === "recommendation-form") {
+      const rows = await apiRequest("/api/products/recommendations?" + new URLSearchParams(data));
+      document.getElementById("recommendation-result").innerHTML = rows.length
+        ? rows.map((r,i) => `<p><a class="text-link" href="#/products/${e(r.productId)}">${i === 0 ? "Рекомендуем: " : ""}${e(lookupProduct(r.productId).name)}</a> — ${e(r.reason)}</p>`).join("")
+        : '<p class="form-error">Нет продукта с такой суммой и сроком. Измените параметры.</p>';
+    } else if (form.id === "auth-form") {
       const mode = form.dataset.mode;
       const payload = { email: data.email.trim().toLowerCase(), password: data.password };
       if (mode === "register") {
@@ -226,12 +255,10 @@ document.addEventListener("submit", async (event) => {
     } else if (form.matches(".decision-form")) {
       if (data.status === "rejected" && !data.comment.trim())
         throw Error("При отказе укажите причину в комментарии");
-      decide(form.dataset.id, {
+      await sendAnalystDecision(form.dataset.id, {
         status: data.status,
         comment: data.comment.trim(),
-        alternativeAmount: data.alternativeAmount
-          ? +data.alternativeAmount
-          : null,
+        alternativeAmount: data.alternativeAmount ? +data.alternativeAmount : null,
       });
       render();
       toast("Решение сохранено. Клиент видит обратную связь.");
@@ -260,6 +287,7 @@ function calculate() {
     ? `<p class="form-error">${e(error)}</p>`
     : calculationHtml(p, +data.amount, +data.months, +(data.days || 30));
 }
+let analystSearchTimer;
 document.addEventListener("input", (event) => {
   const input = event.target;
   if (input.closest("#calculator")) {
@@ -268,11 +296,14 @@ document.addEventListener("input", (event) => {
     if (input.name === "amount") form.elements.amountRange.value = input.value;
     calculate();
   }
-  if (input.id === "analyst-search")
-    document.getElementById("analyst-list").innerHTML = analystRows(
-      document.getElementById("analyst-list").dataset.history === "true",
-      input.value,
-    );
+  if (input.matches("[data-analyst-search]")) {
+    clearTimeout(analystSearchTimer);
+    analystSearchTimer = setTimeout(async () => {
+      changeAnalystFilter("query", input.value);
+      try { await loadAnalyst(); render(); }
+      catch (error) { toast(error.message, true); }
+    }, 350);
+  }
   if (input.closest("#wizard-form")) scheduleWizardAutoSave();
   if (input.closest(".decision-form") && input.name === "status")
     input.form.elements.comment.required = input.value === "rejected";
@@ -280,11 +311,18 @@ document.addEventListener("input", (event) => {
 document.addEventListener("change", async (event) => {
   const input = event.target;
   if (input.closest("#wizard-form") && !input.matches("[data-upload]")) scheduleWizardAutoSave();
+  if (input.matches("[data-analyst-filter]")) {
+    changeAnalystFilter(input.dataset.analystFilter, input.value);
+    try { await loadAnalyst(); render(); }
+    catch (error) { toast(error.message, true); }
+    return;
+  }
   if (!input.matches("[data-upload]") || !input.files?.[0]) return;
   input.disabled = true;
   try {
     if (input.dataset.wizard) captureWizard();
-    const doc = await addDocument(input.files[0], input.dataset.upload);
+    const applicationId = input.dataset.wizard ? await autoSaveWizard() : null;
+    const doc = await addDocument(input.files[0], input.dataset.upload, applicationId);
     if (
       input.dataset.wizard &&
       getWizard() &&
@@ -294,7 +332,7 @@ document.addEventListener("change", async (event) => {
       renderWizard();
       scheduleWizardAutoSave();
     } else render();
-    toast("Документ сохранён в браузере");
+    toast("Документ сохранён на сервере");
   } catch (error) {
     toast(error.message, true);
     input.disabled = false;
@@ -303,7 +341,12 @@ document.addEventListener("change", async (event) => {
 });
 window.addEventListener("delora:refresh", render);
 window.addEventListener("hashchange", () => {
-  render();
+  if (session()?.id === "admin") {
+    changeAnalystFilter("status", route().parts[0] === "history" ? "all" : "pending");
+    loadAnalyst().then(render).catch(error => toast(error.message, true));
+  } else if (session()?.id) {
+    restoreServerApplications().then(render).catch(error => toast(error.message, true));
+  } else render();
   if (!route().params.has("documents")) window.scrollTo({ top: 0 });
 });
 window.addEventListener("storage", (event) => {
@@ -312,9 +355,13 @@ window.addEventListener("storage", (event) => {
     render();
   }
 });
-restoreAuth().then(async () => {
+Promise.all([restoreAuth(), loadProducts()]).then(async () => {
   render();
-  if (session()?.id && session().id !== "admin") {
+  if (session()?.id === "admin") {
+    changeAnalystFilter("status", route().parts[0] === "history" ? "all" : "pending");
+    try { await loadAnalyst(); render(); }
+    catch (error) { toast(`Заявки аналитика недоступны: ${error.message}`, true); }
+  } else if (session()?.id) {
     try { await restoreServerApplications(); render(); }
     catch (error) { toast(`Серверные заявки недоступны: ${error.message}`, true); }
   }

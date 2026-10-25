@@ -19,3 +19,12 @@ async def list_products() -> list[dict]:
         }
         for p in PRODUCTS.values()
     ]
+
+
+@router.get('/recommendations')
+async def recommend(purpose: str = '', amount: int = 1_000_000, months: int = 12):
+    from app.services.credit_policy import recommendations
+    from fastapi import HTTPException
+    if len(purpose) > 500 or amount <= 0 or months <= 0:
+        raise HTTPException(422, 'Укажите корректные цель, сумму и срок')
+    return recommendations(purpose, amount, months)

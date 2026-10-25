@@ -24,9 +24,9 @@ export function productCards() {
 }
 export function home(user) {
   const apps = ownApplications();
-  const pending = apps.filter((a) => a.status === "pending").length;
+  const pending = apps.filter((a) => ["pending", "submitted", "processing", "needs_info", "processing_error"].includes(a.status)).length;
   const approved = apps.filter((a) =>
-    ["approved", "completed"].includes(a.status),
+    ["approved", "offer_accepted", "signed", "disbursed", "completed"].includes(a.status),
   ).length;
   const docs = ownDocuments();
   const required = documentTypes(user.type, "equipment");
@@ -41,7 +41,7 @@ export function home(user) {
   <p class="footnote">Все условия, клиенты и решения в этой версии демонстрационные.</p>`;
 }
 export function products() {
-  return `${pageBanner(heading("Подбор кредита", "Выберите задачу бизнеса. Рассчитайте условия перед подачей заявки."), "selection")}<div class="notice">${icon("info")}<span>Демонстрационные продукты. Ставки и лимиты заданы для хакатона и не являются предложением банка.</span></div>${productCards()}<section class="panel guide"><h2>Какой продукт подойдёт?</h2><div class="guide-grid">${PRODUCTS.map((p, i) => `<div><span class="step-number">0${i + 1}</span><h3>${p.name}</h3><p>${p.detail}</p><a href="#/products/${p.id}" class="text-link">Рассчитать ${icon("arrow")}</a></div>`).join("")}</div></section>`;
+  return `${pageBanner(heading("Подбор кредита", "Выберите задачу бизнеса. Рассчитайте условия перед подачей заявки."), "selection")}<div class="notice">${icon("info")}<span>Демонстрационные продукты. Ставки и лимиты заданы для хакатона и не являются предложением банка.</span></div><section class="panel"><h2>Подобрать по потребности</h2><form id="recommendation-form" class="form-stack"><div class="form-grid">${field("Сумма, ₽", "amount", 1000000, {type:"number",required:true,attrs:'min="1"'})}${field("Срок, мес.","months",12,{type:"number",required:true,attrs:'min="1" max="120"'})}</div>${field("Цель", "purpose", "Закупка товаров",{required:true,attrs:'maxlength="500"'})}<button class="button primary" type="submit">Подобрать</button></form><div id="recommendation-result" aria-live="polite"></div></section>${productCards()}<section class="panel guide"><h2>Какой продукт подойдёт?</h2><div class="guide-grid">${PRODUCTS.map((p, i) => `<div><span class="step-number">0${i + 1}</span><h3>${p.name}</h3><p>${p.detail}</p><a href="#/products/${p.id}" class="text-link">Рассчитать ${icon("arrow")}</a></div>`).join("")}</div></section>`;
 }
 export function productDetail(id, user) {
   const p = productById(id);
@@ -70,7 +70,7 @@ export function applications(status = "all") {
       ? all
       : all.filter((a) =>
           status === "approved"
-            ? ["approved", "completed"].includes(a.status)
+            ? ["approved", "offer_accepted", "signed", "disbursed", "completed"].includes(a.status)
             : a.status === status,
         );
   return `${pageBanner(heading("Мои заявки", "Следите за решением и продолжайте сохранённые черновики.", button(icon("plus") + " Новая заявка", "new-application")), "applications")}<div class="tabs" role="navigation" aria-label="Фильтр заявок">${[
@@ -97,10 +97,8 @@ export function applicationDetail(id) {
       '<a class="button primary" href="#/applications">Мои заявки</a>',
     );
   const p = productById(a.productId);
-  const docs = getState().documents.filter((d) =>
-    a.documentIds?.includes(d.id),
-  );
-  return `<a href="#/applications" class="back-link">${icon("arrow")} Мои заявки</a>${heading("Заявка " + e(a.id), "Создана " + date(a.createdAt), badge(a.status))}<div class="two-column"><section class="panel"><h2>${p.name}</h2><dl class="details"><div><dt>Сумма</dt><dd>${money(a.amount)}</dd></div><div><dt>Срок</dt><dd>${a.months} мес.</dd></div><div><dt>Цель</dt><dd>${e(a.purpose)}</dd></div><div><dt>Ставка</dt><dd>${p.rate}% годовых, демо</dd></div></dl>${a.comment ? `<div class="feedback"><h3>Комментарий аналитика</h3><p>${e(a.comment)}</p></div>` : ""}${a.alternativeAmount ? `<p>Возможная сумма для новой заявки: <strong>${money(a.alternativeAmount)}</strong></p>` : ""}${a.status === "draft" ? button("Продолжить заполнение", "edit-application", "primary", `data-id="${e(a.id)}"`) : ""}${a.status === "rejected" ? button("Изменить условия и подать заново", "revise-application", "primary", `data-id="${e(a.id)}"`) : ""}${a.status === "approved" ? `<p class="footnote">Принятие условий завершит учебный сценарий. Реальный договор не заключается, деньги не выдаются.</p>${button("Принять условия в демо", "accept-offer", "primary", `data-id="${e(a.id)}"`)}` : ""}${a.status === "pending" ? '<p class="notice">Заявка передана на рассмотрение. Решение и комментарий появятся здесь.</p>' : ""}${a.status === "completed" ? '<p class="notice success">Учебный сценарий завершён. Условия приняты.</p>' : ""}<h3 class="spaced">Документы заявки</h3>${docs.length ? docs.map((d) => `<button class="document-link" data-action="download-document" data-id="${e(d.id)}">${icon("file")}${e(d.name)}${icon("arrow")}</button>`).join("") : '<p class="muted">У синтетической заявки файлы не приложены.</p>'}</section><section class="panel"><h2>Ход рассмотрения</h2><ol class="timeline">${a.history.map((h) => `<li><span class="timeline-dot"></span><strong>${e(h.text)}</strong><small>${date(h.at)}</small></li>`).join("")}</ol></section></div>`;
+  const docs = a.workflow?.documents?.map(d => ({...d, name: d.filename})) || getState().documents.filter(d => a.documentIds?.includes(d.id));
+  return `<a href="#/applications" class="back-link">${icon("arrow")} Мои заявки</a>${heading("Заявка " + e(a.id.slice(0, 8).toUpperCase()), "Создана " + date(a.createdAt), badge(a.status))}<div class="two-column"><section class="panel"><h2>${p.name}</h2><dl class="details"><div><dt>Сумма</dt><dd>${money(a.amount)}</dd></div><div><dt>Срок</dt><dd>${a.months} мес.</dd></div><div><dt>Цель</dt><dd>${e(a.purpose)}</dd></div><div><dt>Ставка</dt><dd>${p.rate}% годовых, демо</dd></div></dl>${a.comment ? `<div class="feedback"><h3>Комментарий аналитика</h3><p>${e(a.comment)}</p></div>` : ""}${a.alternativeAmount ? `<p>Возможная сумма для новой заявки: <strong>${money(a.alternativeAmount)}</strong></p>` : ""}${["draft", "needs_info"].includes(a.status) ? button("Продолжить заполнение", "edit-application", "primary", `data-id="${e(a.id)}"`) : ""}${a.status === "rejected" ? button("Изменить условия и подать заново", "revise-application", "primary", `data-id="${e(a.id)}"`) : ""}${workflowPanel(a)}<h3 class="spaced">Документы заявки</h3>${docs.length ? docs.map((d) => `<button class="document-link" data-action="download-document" data-id="${e(d.id)}">${icon("file")}${e(d.name)}${icon("arrow")}</button>`).join("") : '<p class="muted">Документы ещё не приложены.</p>'}</section><section class="panel"><h2>Ход рассмотрения</h2><ol class="timeline">${a.history.map((h) => `<li><span class="timeline-dot"></span><strong>${e(h.text)}</strong><small>${date(h.at)}</small></li>`).join("")}</ol></section></div>`;
 }
 export function profile(user) {
   const docs = ownDocuments();
@@ -108,9 +106,27 @@ export function profile(user) {
   return `${pageBanner(heading("Личный кабинет", "Данные бизнеса и документы для ваших заявок."), "profile")}<div class="profile-header panel">${artwork(user.type === "ip" ? "profile" : "business", "profile-business-art")}<div><h2>${e(user.name)}</h2><p>${user.type === "ip" ? "Индивидуальный предприниматель" : "Юридическое лицо"} <span class="separator">/</span> ИНН ${e(user.inn)}</p></div><span class="badge neutral">${user.type === "ip" ? "ИП" : "Юрлицо"}</span></div><div class="two-column profile-columns"><section class="panel"><h2>Сведения о бизнесе</h2><form id="profile-form" class="form-stack">${field(user.type === "ip" ? "ФИО предпринимателя" : "Наименование организации", "name", user.name, { required: true, attrs: 'maxlength="160"' })}${field("Контактное лицо", "contact", user.contact, { required: true, attrs: 'maxlength="100"' })}<div class="form-grid">${field("ИНН", "inn", user.inn, { attrs: "readonly", hint: "Указан при регистрации" })}${field(user.type === "ip" ? "ОГРНИП" : "ОГРН", "ogrn", user.ogrn, { attrs: `inputmode="numeric" pattern="[0-9]{${user.type === "ip" ? 15 : 13}}" maxlength="${user.type === "ip" ? 15 : 13}"` })}</div>${user.type === "llc" ? field("КПП", "kpp", user.kpp, { attrs: 'inputmode="numeric" pattern="[0-9]{9}" maxlength="9"' }) : ""}<div class="form-grid">${field("Основной ОКВЭД", "okved", user.okved, { attrs: 'pattern="[0-9]{2}(\\.[0-9]{1,2}){0,2}" maxlength="8" placeholder="47.91"' })}${field("Дата регистрации бизнеса", "registration", user.registration, { type: "date", attrs: `max="${new Date().toISOString().slice(0, 10)}"` })}</div>${field(user.type === "ip" ? "Адрес ведения деятельности" : "Юридический адрес", "address", user.address, { attrs: 'maxlength="250"' })}<h3>Контакты аккаунта</h3><div class="form-grid">${field("Электронная почта", "email", user.email, { type: "email", required: true, attrs: 'maxlength="150" readonly' })}${field("Телефон", "phone", user.phone, { type: "tel", attrs: 'maxlength="25"' })}</div><button class="button primary" type="submit">Сохранить изменения</button></form><h3>Безопасность аккаунта</h3><form id="password-form" class="form-stack">${field("Текущий пароль", "current_password", "", { type: "password", required: true, attrs: 'maxlength="128" autocomplete="current-password"' })}${field("Новый пароль", "new_password", "", { type: "password", required: true, attrs: 'minlength="8" maxlength="128" autocomplete="new-password"' })}${field("Повторите новый пароль", "confirm_password", "", { type: "password", required: true, attrs: 'minlength="8" maxlength="128" autocomplete="new-password"' })}<button class="button secondary" type="submit">Изменить пароль</button></form>${button("Выйти на всех устройствах", "logout-all", "text")}</section><section class="panel" id="documents"><h2>Документы</h2><p class="muted">Добавьте один раз и используйте в новых заявках.</p><div class="document-list">${requirements
     .map((t) => {
       const found = docs.filter((d) => d.type === t.id);
-      return `<div class="document-slot"><div class="document-slot-title">${icon("file")}<div><strong>${t.name}</strong><small>${t.hint}</small></div>${found.length ? icon("check", "green") : ""}</div>${found.map((d) => `<button class="document-link" data-action="download-document" data-id="${e(d.id)}"><span>${e(d.name)}<small>${d.demo ? "Синтетический пример" : Math.ceil(d.size / 1024) + " КБ"} - ${date(d.createdAt)}</small></span>${icon("arrow")}</button>`).join("")}<label class="upload-label">${icon("upload")} ${found.length ? "Добавить ещё" : "Прикрепить документ"}<input class="file-input" type="file" data-upload="${t.id}" accept=".pdf,.jpg,.jpeg,.png"></label></div>`;
+      return `<div class="document-slot"><div class="document-slot-title">${icon("file")}<div><strong>${t.name}</strong><small>${t.hint}</small></div>${found.length ? icon("check", "green") : ""}</div>${found.map((d) => `<button class="document-link" data-action="download-document" data-id="${e(d.id)}"><span>${e(d.name)}<small>${d.demo ? "Синтетический пример" : Math.ceil(d.size / 1024) + " КБ"} - ${date(d.createdAt)}</small></span>${icon("arrow")}</button>`).join("")}<label class="upload-label">${icon("upload")} ${found.length ? "Добавить ещё" : "Прикрепить документ"}<input class="file-input" type="file" data-upload="${t.id}" accept=".pdf"></label></div>`;
     })
     .join(
       "",
-    )}</div><p class="footnote">PDF, JPG или PNG, до 10 МБ. Файлы сохраняются только в этом браузере. Используйте синтетические документы.</p></section></div>`;
+    )}</div><p class="footnote">PDF, до 10 МБ. Файлы сохраняются на сервере. Используйте синтетические документы.</p></section></div>`;
+}
+
+function workflowPanel(a) {
+  const flow = a.workflow;
+  if (!flow) return "";
+  const run = flow.assessments.at(-1);
+  const offer = flow.offers.at(-1);
+  const actionForm = (operation, label, consent) => `<form id="offer-action-form" data-id="${e(a.id)}" data-operation="${operation}" class="form-stack"><label class="check-field"><input type="checkbox" name="acknowledged" required><span>${consent}</span></label><button class="button primary" type="submit">${label}</button></form>`;
+  return `<section class="spaced"><h3>Проверка заявки</h3>${run ? `<p>${run.policy.reasons.map(e).join(". ")}</p><p class="footnote">Демонстрационная оценка риска: ${run.risk.points}/100. Это не вероятность дефолта и не политика банка.</p>` : '<p class="muted">Проверки начнутся после отправки заявки.</p>'}
+  ${button("Обновить статус", "refresh-applications", "text")}
+  ${a.status === "needs_info" ? '<p class="notice">Аналитик запросил уточнения. Дополните заявку и отправьте повторно.</p>' : ""}
+  ${a.status === "processing_error" ? button("Повторить с доступными демо-источниками", "retry-processing", "secondary", `data-id="${e(a.id)}"`) : ""}
+  ${offer ? `<h3>Предложение · версия ${offer.version}</h3><dl class="details"><div><dt>Сумма / срок</dt><dd>${money(offer.amount)} / ${offer.months} мес.</dd></div><div><dt>Ставка / платёж</dt><dd>${offer.annual_rate}% / ${money(offer.monthly_payment)}</dd></div></dl>${offer.principal_due ? `<p>Проценты ежемесячно; основной долг ${money(offer.principal_due)} возвращается в конце срока.</p>` : ""}<details><summary>Демонстрационный договор</summary><p>${e(offer.contract_text)}</p></details>
+  ${a.status === "approved" ? actionForm("accept", "Принять предложение", "Согласен с предложенными демонстрационными условиями") + button("Отклонить предложение", "decline-offer", "text", `data-id="${e(a.id)}"`) : ""}
+  ${a.status === "offer_accepted" ? actionForm("sign", "Подписать демо-договор", "Ознакомился с демонстрационным договором и подтверждаю условное подписание") : ""}
+  ${a.status === "signed" ? button("Завершить демонстрационную выдачу", "disburse-offer", "primary", `data-id="${e(a.id)}"`) : ""}
+  ${a.status === "disbursed" ? '<p class="notice success">Демонстрационная выдача завершена. Реальные деньги не переводились.</p>' : ""}
+  ${a.status === "offer_declined" ? '<p class="notice">Вы отклонили предложение.</p>' : ""}` : ""}</section>`;
 }

@@ -29,7 +29,7 @@ class ApplicationRepository:
             select(LoanApplication).where(
                 LoanApplication.id == application_id,
                 LoanApplication.business_id == business_id,
-            )
+            ).with_for_update().execution_options(populate_existing=True)
         )
 
     async def list_owned(self, business_id: int) -> list[LoanApplication]:

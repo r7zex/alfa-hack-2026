@@ -64,12 +64,12 @@ export function startWizard(options = {}) {
       revenue: "",
       expenses: "",
       debtPayment: 0,
-      documentIds: ownDocuments().map((d) => d.id),
+      documentIds: documentTypes(currentUser().type, p.id).flatMap(t => { const d = ownDocuments().find(d => d.type === t.id); return d ? [d.id] : []; }),
+      mockScenario: "success",
       ...source,
     },
   };
-  // Documents are still browser-local: if a restored draft has no access to
-  // the required files, resume at upload instead of the confirmation step.
+  // Resume at upload if the server has no required attachments.
   if (source && wizard.step === 3) {
     const available = ownDocuments().filter(d => wizard.values.documentIds?.includes(d.id));
     const missing = documentTypes(currentUser().type, wizard.values.productId)
@@ -100,6 +100,7 @@ export function captureWizard() {
     "revenue",
     "expenses",
     "debtPayment",
+    "mockScenario",
   ])
     if (data.has(name)) wizard.values[name] = data.get(name);
   if (wizard.step === 2) wizard.values.documentIds = data.getAll("documentIds");
@@ -122,7 +123,7 @@ function stepContent() {
   if (wizard.step === 0)
     return `<h3>На что нужны средства?</h3><div class="wizard-products">${PRODUCTS.map((item) => `<button type="button" class="wizard-product ${p.id === item.id ? "selected" : ""}" data-action="wizard-product" data-id="${item.id}" aria-pressed="${p.id === item.id}">${artwork(item.id, "wizard-art")}<strong>${item.name}</strong><small>до ${money(item.max)}</small></button>`).join("")}</div><div class="form-grid">${field(p.id === "overdraft" ? "Лимит, ₽" : "Сумма кредита, ₽", "amount", v.amount, { type: "number", required: true, attrs: `min="${p.min}" max="${p.max}" step="1"` })}${field("Срок, мес.", "months", v.months, { type: "number", required: true, attrs: `min="${p.months[0]}" max="${p.months[1]}" step="1"` })}</div><label class="field"><span>Цель финансирования <span class="required">*</span></span><textarea name="purpose" required maxlength="500" rows="3">${e(v.purpose)}</textarea></label><p class="footnote">${p.rate}% годовых - демонстрационная ставка. Условия учебные.</p>`;
   if (wizard.step === 1)
-    return `<h3>Профиль и финансовые показатели</h3><div class="business-preview">${icon(user.type === "ip" ? "user" : "building")}<div><strong>${e(user.name)}</strong><small>${user.type === "ip" ? "ИП" : "Юридическое лицо"} / ИНН ${e(user.inn)}</small></div></div><p class="muted">Укажите среднемесячные показатели в рублях.</p><div class="form-grid">${field("Выручка в месяц, ₽", "revenue", v.revenue, { type: "number", required: true, attrs: 'min="1" max="10000000000" step="1"' })}${field("Расходы в месяц, ₽", "expenses", v.expenses, { type: "number", required: true, attrs: 'min="0" max="10000000000" step="1"' })}</div>${field("Платежи по другим кредитам в месяц, ₽", "debtPayment", v.debtPayment, { type: "number", required: true, attrs: 'min="0" max="10000000000" step="1"' })}<p class="notice">${icon("info")}Учитываются заявленные показатели. Автоматическая проверка реестров и ML-скоринг в этом фронтенде не подключены.</p>`;
+    return `<h3>Профиль и финансовые показатели</h3><div class="business-preview">${icon(user.type === "ip" ? "user" : "building")}<div><strong>${e(user.name)}</strong><small>${user.type === "ip" ? "ИП" : "Юридическое лицо"} / ИНН ${e(user.inn)}</small></div></div><p class="muted">Укажите среднемесячные показатели в рублях.</p><div class="form-grid">${field("Выручка в месяц, ₽", "revenue", v.revenue, { type: "number", required: true, attrs: 'min="1" max="10000000000" step="1"' })}${field("Расходы в месяц, ₽", "expenses", v.expenses, { type: "number", required: true, attrs: 'min="0" max="10000000000" step="1"' })}</div>${field("Платежи по другим кредитам в месяц, ₽", "debtPayment", v.debtPayment, { type: "number", required: true, attrs: 'min="0" max="10000000000" step="1"' })}<label class="field"><span>Демонстрационный сценарий проверок</span><select name="mockScenario">${[["success","Источники доступны"],["missing","Нет сведений"],["negative","Негативные сведения"],["unavailable","Источник недоступен"],["malformed","Некорректный ответ"]].map(([id,label]) => `<option value="${id}" ${v.mockScenario === id ? "selected" : ""}>${label}</option>`).join("")}</select></label><p class="notice">${icon("info")}Учитываются заявленные показатели. После отправки выполняются mock-проверки и демонстрационная оценка риска.</p>`;
   if (wizard.step === 2)
     return `<h3>Приложите документы</h3><p class="muted">Выберите сохранённый файл или загрузите новый. Учебный перечень для ${user.type === "ip" ? "ИП" : "юрлица"}.</p>${documentTypes(
       user.type,
@@ -130,12 +131,12 @@ function stepContent() {
     )
       .map((t) => {
         const docs = ownDocuments().filter((d) => d.type === t.id);
-        return `<div class="document-slot"><strong>${t.name} <span class="required">*</span></strong><small>${t.hint}</small>${docs.map((d) => `<label class="check-field document-choice"><input type="checkbox" name="documentIds" value="${e(d.id)}" ${v.documentIds.includes(d.id) ? "checked" : ""}><span>${e(d.name)}${d.demo ? " (демо)" : ""}</span></label>`).join("")}<label class="upload-label">${icon("upload")} Загрузить файл<input class="file-input" type="file" data-upload="${t.id}" data-wizard="true" accept=".pdf,.jpg,.jpeg,.png"></label></div>`;
+        return `<div class="document-slot"><strong>${t.name} <span class="required">*</span></strong><small>${t.hint}</small>${docs.map((d) => `<label class="check-field document-choice"><input type="checkbox" name="documentIds" value="${e(d.id)}" ${v.documentIds.includes(d.id) ? "checked" : ""}><span>${e(d.name)}${d.demo ? " (демо)" : ""}</span></label>`).join("")}<label class="upload-label">${icon("upload")} Загрузить файл<input class="file-input" type="file" data-upload="${t.id}" data-wizard="true" accept=".pdf"></label></div>`;
       })
       .join(
         "",
-      )}<p class="footnote">PDF, JPG или PNG, до 10 МБ. Сохраняются в браузере, на сервер не отправляются.</p>`;
-  return `<h3>Проверьте заявку</h3><div class="review-product">${icon(p.icon)}<div><small>Выбранный продукт</small><strong>${p.name}</strong></div><strong>${money(v.amount)}</strong></div><dl class="details"><div><dt>Заявитель</dt><dd>${e(user.name)}</dd></div><div><dt>Тип и ИНН</dt><dd>${user.type === "ip" ? "ИП" : "Юрлицо"} / ${e(user.inn)}</dd></div><div><dt>Срок</dt><dd>${v.months} мес.</dd></div><div><dt>Цель</dt><dd>${e(v.purpose)}</dd></div><div><dt>Выручка / расходы в месяц</dt><dd>${money(v.revenue)} / ${money(v.expenses)}</dd></div><div><dt>Другие кредитные платежи</dt><dd>${money(v.debtPayment)} / мес.</dd></div><div><dt>Документов</dt><dd>${v.documentIds.length}</dd></div></dl><label class="check-field"><input name="consentData" type="checkbox" required><span>Подтверждаю, что использую синтетические данные для учебной демонстрации.</span></label><label class="check-field"><input name="consentChecks" type="checkbox" required><span>Согласен на моделируемую обработку заявки и демонстрационные проверки.</span></label><p class="footnote">Заявка появится в демо-кабинете аналитика этого браузера. Реальный кредитный запрос не отправляется.</p>`;
+      )}<p class="footnote">PDF, до 10 МБ. Сохраняются на сервере.</p>`;
+  return `<h3>Проверьте заявку</h3><div class="review-product">${icon(p.icon)}<div><small>Выбранный продукт</small><strong>${p.name}</strong></div><strong>${money(v.amount)}</strong></div><dl class="details"><div><dt>Заявитель</dt><dd>${e(user.name)}</dd></div><div><dt>Тип и ИНН</dt><dd>${user.type === "ip" ? "ИП" : "Юрлицо"} / ${e(user.inn)}</dd></div><div><dt>Срок</dt><dd>${v.months} мес.</dd></div><div><dt>Цель</dt><dd>${e(v.purpose)}</dd></div><div><dt>Выручка / расходы в месяц</dt><dd>${money(v.revenue)} / ${money(v.expenses)}</dd></div><div><dt>Другие кредитные платежи</dt><dd>${money(v.debtPayment)} / мес.</dd></div><div><dt>Документов</dt><dd>${v.documentIds.length}</dd></div></dl><label class="check-field"><input name="consentData" type="checkbox" required><span>Подтверждаю, что использую синтетические данные для учебной демонстрации.</span></label><label class="check-field"><input name="consentChecks" type="checkbox" required><span>Согласен на моделируемую обработку заявки и демонстрационные проверки.</span></label><p class="footnote">Заявка появится в кабинете аналитика. Реальный кредитный запрос не отправляется.</p>`;
 }
 export function renderWizard() {
   const titles = ["Потребность", "Бизнес и финансы", "Документы", "Проверка"];

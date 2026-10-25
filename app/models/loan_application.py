@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, Uuid, func
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -38,14 +38,27 @@ class LoanApplication(Base):
         nullable=True, index=True,
     )
     business: Mapped[Business | None] = relationship(back_populates="loan_applications")
-    creator: Mapped[User | None] = relationship(back_populates="created_applications")
+    creator: Mapped[User | None] = relationship(
+        back_populates="created_applications",
+        foreign_keys=[created_by_user_id],
+    )
+    decided_by_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", name="fk_loan_decider"),
+        nullable=True, index=True,
+    )
+    decider: Mapped[User | None] = relationship(foreign_keys=[decided_by_user_id])
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_comment: Mapped[str | None] = mapped_column(Text)
+    alternative_amount: Mapped[int | None] = mapped_column(Integer)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    mock_scenario: Mapped[str] = mapped_column(String(20), nullable=False, default="success", server_default="success")
     product_id: Mapped[str] = mapped_column(String(40), nullable=False)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     months: Mapped[int] = mapped_column(Integer, nullable=False)
     purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
-    revenue: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    expenses: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    debt_payment: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revenue: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    expenses: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    debt_payment: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     current_step: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

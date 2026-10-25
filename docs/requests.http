@@ -1,2 +1,98 @@
-### health check
-#GET http://127.0.0.1:8000/health
+@base = http://127.0.0.1:8000
+@csrf = REPLACE_WITH_CSRF_TOKEN
+@application_id = REPLACE_WITH_UUID
+@offer_id = REPLACE_WITH_OFFER_UUID
+@contract_hash = REPLACE_WITH_SHA256
+
+### Готовность
+GET {{base}}/ready
+
+### Локальная синтетическая организация (DEMO_AUTH_ENABLED=true)
+POST {{base}}/api/auth/demo
+Content-Type: application/json
+
+{"account":"llc"}
+
+### Клиент REST должен сохранять cookie сессии. Скопируйте csrf_token в переменную.
+GET {{base}}/api/auth/csrf
+
+### Каталог
+GET {{base}}/api/products
+
+### Подбор
+GET {{base}}/api/products/recommendations?purpose=оборудование&amount=1000000&months=36
+
+### Создать черновик, заменить application_id из ответа
+POST {{base}}/api/applications
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"productId":"working","amount":1000000,"months":12,"purpose":"Закупка синтетических товаров","revenue":1500000,"expenses":700000,"debtPayment":10000,"mockScenario":"success"}
+
+### Загрузка: замените /absolute/path/synthetic.pdf своим синтетическим PDF
+POST {{base}}/api/documents/{{application_id}}
+X-CSRF-Token: {{csrf}}
+Content-Type: multipart/form-data; boundary=DeloraBoundary
+
+--DeloraBoundary
+Content-Disposition: form-data; name="document_type"
+
+statement
+--DeloraBoundary
+Content-Disposition: form-data; name="file"; filename="statement.pdf"
+Content-Type: application/pdf
+
+< /absolute/path/synthetic.pdf
+--DeloraBoundary--
+
+### Повторите загрузку с document_type=accounts для ЮЛ / tax для ИП, invoice для оборудования.
+### Отправить (без документов сохранится рекомендация запросить сведения)
+POST {{base}}/api/applications/{{application_id}}/submit
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"demo_data":true,"demo_checks":true}
+
+### Сохранённые проверки и история
+GET {{base}}/api/applications/{{application_id}}/workflow
+
+### В ОТДЕЛЬНОМ сеансе аналитика выполните demo account=admin, получите его CSRF.
+GET {{base}}/api/analyst/applications?status=pending&sort=newest
+
+### Решение аналитика (используется cookie и CSRF администратора)
+POST {{base}}/api/analyst/applications/{{application_id}}/decision
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"status":"approved","comment":"Синтетические сведения проверены","alternativeAmount":null}
+
+### ВОЗВРАТ К cookie КЛИЕНТА. Возьмите offer_id и contract_sha256 из /workflow.
+POST {{base}}/api/applications/{{application_id}}/offer/accept
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"offer_id":"{{offer_id}}","acknowledged":true}
+
+### Условная подпись после ознакомления с текстом договора из workflow
+POST {{base}}/api/applications/{{application_id}}/offer/sign
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"offer_id":"{{offer_id}}","acknowledged":true,"contract_sha256":"{{contract_hash}}"}
+
+### Моделируемая выдача; повтор не создаёт второй записи
+POST {{base}}/api/applications/{{application_id}}/offer/disburse
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"offer_id":"{{offer_id}}"}
+
+### Только для processing_error, синтетическое восстановление источников
+POST {{base}}/api/applications/{{application_id}}/retry
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"mockScenario":"success"}
+
+### Опциональная переписка; при отключённом ассистенте available=false
+GET {{base}}/api/assistant/conversation

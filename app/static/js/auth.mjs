@@ -11,10 +11,10 @@ export async function apiRequest(path, { method = "GET", body } = {}) {
     method,
     credentials: "same-origin",
     headers: {
-      ...(body ? { "Content-Type": "application/json" } : {}),
+      ...(body && !(body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
       ...(method !== "GET" && csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
     },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    ...(body ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}),
   });
   if (!response.ok) {
     if (response.status === 401 && path !== "/api/auth/login") {
@@ -26,11 +26,11 @@ export async function apiRequest(path, { method = "GET", body } = {}) {
     const message = Array.isArray(data.detail)
       ? data.detail.map((item) => item.msg).join(". ")
       : data.detail;
-    const error = Error(message || "Не удалось выполнить запрос");
+    const error = Error((typeof message === "object" ? message.message || JSON.stringify(message) : message) || "Не удалось выполнить запрос");
     error.status = response.status;
     throw error;
   }
-  return response.status === 204 ? null : response.json();
+  return response.status === 204 ? null : response.headers?.get("content-type")?.includes("application/pdf") ? response.blob() : response.json();
 }
 
 export function authRequest(path, options) { return apiRequest("/api/auth" + path, options); }
