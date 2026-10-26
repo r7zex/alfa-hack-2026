@@ -8,7 +8,7 @@ export const PRODUCTS = [
       "Закупайте товары, оплачивайте поставки и пополняйте оборотные средства.",
     min: 100000,
     max: 5000000,
-    months: [3, 36],
+    months: [3, 24],
     rate: 24,
     purpose: "Закупка товаров и пополнение оборотных средств",
     feature: "Равные ежемесячные платежи",
@@ -43,10 +43,15 @@ export const PRODUCTS = [
 ];
 export const STATUS = {
   draft: "Черновик",
+  data_check: "Проверка данных", enrichment: "Проверка компании", scoring: "Оценка финансов", decision: "Формирование решения",
+  counter_offer: "Встречное предложение", escalated: "На согласовании", cancelled: "Отменена",
   pending: "На рассмотрении",
   approved: "Одобрено",
   rejected: "Отказано",
-  completed: "Условия приняты",
+  completed: "Ранее завершено",
+  submitted: "Отправлена", processing: "Проверка", needs_info: "Нужны уточнения",
+  processing_error: "Ошибка проверки", offer_accepted: "Условия приняты",
+  offer_declined: "Предложение отклонено", signed: "Демо-договор подписан", disbursed: "Демо-выдача завершена",
 };
 export const productById = (id) =>
   PRODUCTS.find((p) => p.id === id) || PRODUCTS[0];
@@ -142,4 +147,14 @@ export function escape(value) {
         c
       ],
   );
+}
+
+export async function loadProducts() {
+  const response = await fetch("/api/products", {credentials: "same-origin"});
+  if (!response.ok) throw Error("Каталог продуктов недоступен");
+  const rows = await response.json();
+  for (const row of rows) {
+    const product = PRODUCTS.find(p => p.id === row.id);
+    if (product) Object.assign(product, {min: row.min, max: row.max, months: row.months, rate: row.rate});
+  }
 }

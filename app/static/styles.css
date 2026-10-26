@@ -2751,3 +2751,86 @@ td .text-link {
     transform: none;
   }
 }
+
+/* Analyst filters */
+.analyst-filters { display:flex; flex-wrap:wrap; gap:12px; align-items:end; margin:18px 0 22px; }
+.analyst-filters label { display:grid; gap:7px; font-size:12px; color:var(--muted); flex:1 1 175px; }
+.analyst-filters select, .analyst-filters input {
+  width:100%; min-height:44px; border:1px solid var(--line);
+  border-radius:8px; background:var(--surface); color:var(--ink);
+  padding:10px 12px; font:inherit; font-size:13px;
+}
+.analyst-filters .button { min-height:44px; }
+.review-row .decision-form { min-width:0; }
+@media(max-width:780px) { .analyst-filters { flex-direction:column; align-items:stretch; } }
+
+/* Operational screens extend the existing Delora visual system. */
+.panel + .panel { margin-top: 20px; }
+.main-content,.workspace,.two-column > div { min-width:0; }
+.loan-card { display:grid; gap:14px; color:inherit; text-decoration:none; overflow-wrap:anywhere; }
+.loan-amount { font-size:30px; font-weight:700; letter-spacing:-.03em; }
+.table-scroll { width:100%; overflow:auto; overscroll-behavior-inline:contain; }
+.schedule-table { width:100%; border-collapse:collapse; font-size:13px; white-space:nowrap; }
+.schedule-table th,.schedule-table td { padding:13px 12px; border-bottom:1px solid var(--line); text-align:right; }
+.schedule-table th:first-child,.schedule-table td:first-child { text-align:left; }
+.schedule-table th { color:var(--muted); font-weight:500; }
+.schedule-chart { height:220px; display:flex; gap:3px; align-items:end; padding:20px 0; margin-top:15px; border-bottom:1px solid var(--line); }
+.schedule-column { flex:1; min-width:2px; background:#555f70; border:0; padding:0; position:relative; cursor:pointer; }
+.schedule-column > span { position:absolute; top:0; left:0; right:0; background:#ef3124; min-height:2px; }
+.schedule-column.selected { outline:2px solid var(--ink); outline-offset:2px; }
+.notification { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:16px 0; border-bottom:1px solid var(--line); }
+.notification a { color:inherit; text-decoration:none; min-width:0; overflow-wrap:anywhere; }
+.notification small,.notification a small { display:block; color:var(--muted); margin-top:8px; }
+.notification.unread { border-left:3px solid #ef3124; padding-left:14px; }
+.notification > div { display:flex; flex-wrap:wrap; }
+.application-task { padding:16px 0; border-bottom:1px solid var(--line); }
+.application-task form { margin-top:16px; }
+.bank-chat { max-height:380px; overflow:auto; display:flex; flex-direction:column; gap:12px; padding:12px 0 20px; }
+.chat-message { padding:14px 16px; background:var(--surface); border:1px solid var(--line); border-radius:10px; max-width:95%; overflow-wrap:anywhere; }
+.chat-message.client { margin-left:20px; }
+.chat-message.bank { border-left:3px solid #ef3124; margin-right:20px; }
+.chat-message small { color:var(--muted); }
+.chat-message p { white-space:pre-wrap; margin:8px 0 0; }
+.metrics-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:20px 0; }
+.metric { display:grid; align-content:start; gap:12px; margin:0!important; }
+.metric span { color:var(--muted); font-size:13px; }
+.metric strong { font-size:28px; letter-spacing:-.03em; overflow-wrap:anywhere; }
+.funnel-row { display:grid; grid-template-columns:105px 1fr 35px; gap:12px; align-items:center; margin:20px 0; font-size:13px; }
+.funnel-row > div { height:10px; background:var(--line); border-radius:3px; overflow:hidden; }
+.funnel-row i { display:block; height:100%; background:#ef3124; }
+.source-form { flex-wrap:wrap; }
+.source-form label { flex:1 1 220px; }
+.invite-token { display:block; overflow-wrap:anywhere; padding:16px; background:var(--surface); border:1px solid var(--line); }
+.join-panel { max-width:520px; width:100%; margin:auto; }
+.notification-bell { display:flex; align-items:center; gap:5px; color:inherit; text-decoration:none; }
+.notification-bell b { color:#ff5c54; font-size:12px; }
+.offer-comparison { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:18px 0; }
+.offer-comparison > div { border:1px solid var(--line); padding:15px; border-radius:8px; min-width:0; }
+.offer-comparison h4 { color:var(--muted); margin:0 0 12px; font-size:12px; font-weight:500; }
+.offer-comparison p { margin:7px 0; }
+.mobile-menu { display:none; }
+.sidebar nav { min-height:0; overflow-y:auto; }
+@media(max-width:1024px) { .metrics-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .two-column { grid-template-columns:1fr; } }
+@media(max-width:780px) {
+  .topbar > span { display:none; }
+  .topbar { justify-content:flex-end; }
+  .mobile-menu { display:inline-flex; position:absolute; right:16px; top:12px; min-height:36px; }
+  .sidebar { position:relative; height:auto; min-height:62px; }
+  .sidebar nav { display:none!important; }
+  .sidebar.menu-open nav { display:grid!important; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; padding:8px 12px 16px; }
+  .sidebar.menu-open .nav-item { display:flex; flex-direction:row; justify-content:flex-start; min-width:0; padding:12px; font-size:13px; width:auto; }
+  .sidebar.menu-open .nav-item span { white-space:normal; }
+  .sidebar nav .nav-item svg { width:19px; height:19px; flex-shrink:0; }
+  .notification { align-items:start; flex-wrap:wrap; }
+  .topbar-account { min-width:0; }
+  .topbar-account strong { max-width:140px; text-overflow:ellipsis; white-space:nowrap; overflow:hidden; }
+  .metrics-grid { gap:10px; }
+  .metric { padding:16px; }
+  .metric strong { font-size:23px; }
+  .offer-comparison { gap:8px; }
+  .offer-comparison > div { padding:12px; }
+  .loan-amount { font-size:25px; }
+}
+@media(max-width:360px) { .metrics-grid { grid-template-columns:1fr; } .offer-comparison { grid-template-columns:1fr; } .topbar-account strong { max-width:105px; } }
+.panel { overflow-wrap:anywhere; }
+@media(max-width:360px) { .topbar > span { display:none; } .topbar { justify-content:flex-end; } }

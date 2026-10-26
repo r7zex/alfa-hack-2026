@@ -1,5 +1,5 @@
 import { apiRequest } from "./auth.mjs";
-// Server-backed authentication and application drafts; documents remain local.
+// Production state is restored from the API. Browser storage is only a legacy test adapter.
 import { localData, sessionData, cloneData, makeId } from "./runtime.mjs";
 const KEY = "delora.demo.v1";
 const SESSION_KEY = "delora.session.v1";
@@ -154,6 +154,7 @@ export function normalizeDraftHistory(history) {
 let state;
 export function getState() {
   if (state) return state;
+  if (serverAuth) return state = {version: 1, users: [], applications: [], documents: []};
   const raw = localData.getItem(KEY);
   if (raw) {
     try {
@@ -186,7 +187,7 @@ export function getState() {
   return state;
 }
 function persist(next) {
-  localData.setItem(KEY, JSON.stringify(next));
+  if (!serverAuth) localData.setItem(KEY, JSON.stringify(next));
   state = next;
 }
 export function update(mutator) {
@@ -199,13 +200,18 @@ export function invalidate() {
 }
 let serverAuth = false;
 let serverUser = null;
+let authGeneration=0,restoreSequence=0;
 export function useServerAuth(user) {
+  authGeneration++;restoreSequence++;
+  if (!serverAuth || serverUser?.email !== user?.email) state = {version: 1, users: [], applications: [], documents: []};
   serverAuth = true;
   serverUser = user ? {
     ...user.business,
-    id: user.role === "admin" ? "admin" : user.is_demo ? "demo-" + user.business.type : "user-" + user.id,
+    id: ["admin","underwriter","approver"].includes(user.role) ? "admin" : "user-" + user.id,
     email: user.email,
     role: user.role,
+    can_sign: user.can_sign,
+    userId: user.id,
     registration: user.business?.registration || "",
   } : null;
   // Remove the old browser-only sign-in marker during migration.
@@ -242,7 +248,7 @@ export function saveApplication(input, submit) {
       (a) => a.id === id && a.ownerId === owner.id,
     );
     if (id && !existing) throw Error("Заявка не найдена");
-    if (existing && existing.status !== "draft")
+    if (existing && !["draft", "needs_info"].includes(existing.status))
       throw Error("Отправленная заявка недоступна для редактирования");
     id =
       existing?.id ||
@@ -294,6 +300,7 @@ export function decide(id, decision) {
   });
 }
 export function acceptOffer(id) {
+  if (serverAuth) return dealAction(id, "accept", true);
   update((s) => {
     const a = s.applications.find(
       (a) => a.id === id && a.ownerId === session()?.id,
@@ -331,7 +338,16 @@ async function fileOperation(mode, operation) {
     db.close();
   }
 }
-export async function addDocument(file, type) {
+export async function addDocument(file, type, applicationId = null) {
+  if (serverAuth) {
+    const identity=serverUser;
+    const data = new FormData(); data.append("file", file); data.append("document_type", type);
+    const doc = await apiRequest("/api/documents" + (applicationId ? "/" + encodeURIComponent(applicationId) : ""), {method: "POST", body: data});
+    if(identity!==serverUser)throw Error("Сессия изменилась. Откройте документы заново.");
+    const normalized = documentRow(doc, session()?.id);
+    update(s => s.documents.push(normalized));
+    return normalized;
+  }
   if (!currentUser()) throw Error("Сначала войдите в кабинет");
   if (file.size === 0 || file.size > 10 * 1024 * 1024)
     throw Error("Выберите непустой файл размером до 10 МБ");
@@ -375,6 +391,7 @@ export async function addDocument(file, type) {
   return doc;
 }
 export async function readDocument(id) {
+  if (serverAuth) return apiRequest(`/api/documents/${encodeURIComponent(id)}/content`);
   const doc = getState().documents.find(
     (d) =>
       d.id === id && (d.ownerId === session()?.id || session()?.id === "admin"),
@@ -406,8 +423,12 @@ function demoOwner() {
   return serverOwners.includes(owner) ? owner : null;
 }
 function perform(owner, task) {
+  const identity=serverUser;
   const prior = queue.get(owner) || Promise.resolve();
-  const current = prior.catch(() => {}).then(task);
+  const current = prior.catch(() => {}).then(()=>{
+    if(serverAuth&&serverUser!==identity)throw Error("Сессия изменилась. Войдите заново.");
+    return task();
+  });
   queue.set(owner, current);
   return current;
 }
@@ -422,6 +443,9 @@ function payload(row) {
     purpose: row.purpose || null, revenue: nullable(row.revenue),
     expenses: nullable(row.expenses), debtPayment: nullable(row.debtPayment),
     currentStep: row.currentStep ?? 0,
+    mockScenario: row.mockScenario || "success",
+    decisionMode: row.decisionMode || "auto",
+    documentIds: (row.documentIds || []).filter(id => serverIds.test(id)),
   };
 }
 export async function syncDraft(localId) {
@@ -449,25 +473,42 @@ export async function submitDraft(localId, values) {
   const owner = demoOwner();
   if (!owner) return saveApplication(values, true);
   const id = await syncDraft(localId);
-  await perform(owner, () => serverRequest(owner, `/api/applications/${id}/submit`, { method: "POST" }));
-  return saveApplication({ ...values, id }, true);
+  await perform(owner, () => serverRequest(owner, `/api/applications/${id}/submit`, { method: "POST", body: JSON.stringify({demo_data: !!values.consents?.demoData, demo_checks: !!values.consents?.demoChecks}) }));
+  await restoreServerApplications();
+  return id;
+}
+function documentRow(doc, owner) {
+  return {...doc, ownerId: owner, name: doc.filename, type: doc.document_type, createdAt: doc.created_at};
 }
 export async function restoreServerApplications() {
   const owner = demoOwner();
   if (!owner) return;
-  const rows = await perform(owner, () => serverRequest(owner, "/api/applications"));
-  if (session()?.id !== owner) return;
+  const generation=authGeneration,sequence=++restoreSequence;
+  const rows = await apiRequest("/api/applications");
+  const [documents, flows] = await Promise.all([
+    apiRequest("/api/documents"),
+    Promise.all(rows.map(row => apiRequest(`/api/applications/${row.id}/workflow`))),
+  ]);
+  if (session()?.id !== owner||generation!==authGeneration||sequence!==restoreSequence) return;
   update(s => {
-    const known = new Map(s.applications.map(a => [a.id, a]));
-    for (const row of rows) {
-      const old = known.get(row.id);
-      known.set(row.id, {
-        ...old, ...row, ownerId: owner,
-        profile: old?.profile || cloneData(currentUser()),
-        documentIds: old?.documentIds || [],
-        history: old?.history || [{ text: row.status === "draft" ? "Черновик сохранён" : "Заявка отправлена", at: row.createdAt }],
-      });
-    }
-    s.applications = [...known.values()];
+    s.documents = documents.map(d => documentRow(d, owner));
+    s.applications = rows.map((row, i) => ({
+      ...row, status:flows[i].status,version:flows[i].version,ownerId: owner, profile: cloneData(currentUser()), workflow: flows[i],
+      documentIds: flows[i].documents.map(d => d.id),
+      history: flows[i].history.filter(h => h.old_status !== h.new_status || h.reason !== "Данные заявки обновлены").map(h => ({text: h.reason, at: h.created_at})),
+    }));
   });
+}
+export async function dealAction(id, action, acknowledged = false, extra = {}) {
+  const app = ownApplications().find(a => a.id === id);
+  const offer = app?.workflow?.offers?.at(-1);
+  if (!offer) throw Error("Предложение отсутствует. Обновите заявку.");
+  await apiRequest(`/api/applications/${id}/offer/${action}`, {method: "POST", body: {
+    offer_id: offer.id, acknowledged, contract_sha256: offer.contract_sha256, ...extra,
+  }});
+  await restoreServerApplications();
+}
+export async function retryProcessing(id) {
+  await apiRequest(`/api/applications/${id}/retry`, {method: "POST", body: {mockScenario: "success"}});
+  await restoreServerApplications();
 }

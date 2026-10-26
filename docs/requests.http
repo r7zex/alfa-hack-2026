@@ -1,2 +1,156 @@
-### health check
-#GET http://127.0.0.1:8000/health
+@base = http://127.0.0.1:8000
+@csrf = REPLACE_WITH_CSRF_TOKEN
+@application_id = REPLACE_WITH_UUID
+@offer_id = REPLACE_WITH_OFFER_UUID
+@contract_hash = REPLACE_WITH_SHA256
+@challenge_id = REPLACE_WITH_CODE_CHALLENGE_UUID
+@demo_code = REPLACE_WITH_SIX_DIGITS
+@reviewed_version = 0
+
+### Готовность
+GET {{base}}/ready
+
+### Локальная синтетическая организация (DEMO_AUTH_ENABLED=true)
+POST {{base}}/api/auth/demo
+Content-Type: application/json
+
+{"account":"llc"}
+
+### Клиент REST должен сохранять cookie сессии. Скопируйте csrf_token в переменную.
+GET {{base}}/api/auth/csrf
+
+### Каталог
+GET {{base}}/api/products
+
+### Подбор
+GET {{base}}/api/products/recommendations?purpose=оборудование&amount=1000000&months=36
+
+### Создать черновик, заменить application_id из ответа
+POST {{base}}/api/applications
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"productId":"working","amount":1000000,"months":12,"purpose":"Закупка синтетических товаров","revenue":1500000,"expenses":700000,"debtPayment":10000,"mockScenario":"success","decisionMode":"auto"}
+
+### Загрузка: замените /absolute/path/synthetic.pdf своим синтетическим PDF
+POST {{base}}/api/documents/{{application_id}}
+X-CSRF-Token: {{csrf}}
+Content-Type: multipart/form-data; boundary=DeloraBoundary
+
+--DeloraBoundary
+Content-Disposition: form-data; name="document_type"
+
+statement
+--DeloraBoundary
+Content-Disposition: form-data; name="file"; filename="statement.pdf"
+Content-Type: application/pdf
+
+< /absolute/path/synthetic.pdf
+--DeloraBoundary--
+
+### Повторите загрузку с document_type=accounts для ЮЛ / tax для ИП, invoice для оборудования.
+### Отправить (без документов сохранится рекомендация запросить сведения)
+POST {{base}}/api/applications/{{application_id}}/submit
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"demo_data":true,"demo_checks":true}
+
+### Сохранённые проверки и история
+GET {{base}}/api/applications/{{application_id}}/workflow
+
+### В ОТДЕЛЬНОМ сеансе аналитика выполните demo account=admin, получите его CSRF.
+GET {{base}}/api/analyst/applications?status=pending&sort=newest
+
+### Решение аналитика (используется cookie и CSRF администратора)
+POST {{base}}/api/analyst/applications/{{application_id}}/decision
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"status":"approved","expectedVersion":{{reviewed_version}},"comment":"Синтетические сведения проверены","alternativeAmount":null}
+
+### ВОЗВРАТ К cookie КЛИЕНТА. Возьмите offer_id и contract_sha256 из /workflow.
+POST {{base}}/api/applications/{{application_id}}/offer/accept
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"offer_id":"{{offer_id}}","acknowledged":true}
+
+### Получить одноразовый демонстрационный код (только после accept)
+POST {{base}}/api/applications/{{application_id}}/signing-code
+X-CSRF-Token: {{csrf}}
+
+### Условная подпись после ознакомления. Возьмите challenge_id/code из предыдущего ответа (показ только в локальном demo-режиме).
+POST {{base}}/api/applications/{{application_id}}/offer/sign
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"offer_id":"{{offer_id}}","acknowledged":true,"contract_sha256":"{{contract_hash}}","challenge_id":"{{challenge_id}}","code":"{{demo_code}}"}
+
+### Моделируемая выдача; повтор не создаёт второй записи
+POST {{base}}/api/applications/{{application_id}}/offer/disburse
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"offer_id":"{{offer_id}}"}
+
+### Только для processing_error, синтетическое восстановление источников
+POST {{base}}/api/applications/{{application_id}}/retry
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"mockScenario":"success","decisionMode":"auto"}
+
+### Опциональная переписка; при отключённом ассистенте available=false
+GET {{base}}/api/assistant/conversation
+
+### Новая карточка банка содержит version; скопируйте именно просмотренную в reviewed_version
+GET {{base}}/api/analyst/applications/{{application_id}}
+
+### Взять заявку в работу; затем перечитать version
+POST {{base}}/api/analyst/applications/{{application_id}}/assign
+X-CSRF-Token: {{csrf}}
+
+### Сохраняемый ML класса1
+GET {{base}}/api/applications/{{application_id}}/ml
+
+### Cookie-authenticated SSE, без query token
+GET {{base}}/api/applications/{{application_id}}/stream
+Last-Event-ID: 0
+Accept: text/event-stream
+
+### Чат с банком (request_id один и тот же при повторе)
+POST {{base}}/api/applications/{{application_id}}/messages
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"request_id":"d4f594e1-7aee-4385-af73-d9485eb936d4","text":"Синтетические документы приложены"}
+
+### Задачи и уведомления
+GET {{base}}/api/applications/{{application_id}}/tasks
+
+GET {{base}}/api/notifications
+
+### Выданные кредиты и метрики банка (разные роли/сеансы)
+GET {{base}}/api/loans
+
+GET {{base}}/api/analyst/analytics
+
+GET {{base}}/api/analyst/operations
+
+### Синтетический сбой БКИ, только ADMIN
+PUT {{base}}/api/admin/integrations/bki
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"mode":"unavailable"}
+
+### Восстановление БКИ
+PUT {{base}}/api/admin/integrations/bki
+Content-Type: application/json
+X-CSRF-Token: {{csrf}}
+
+{"mode":"success"}
+
+### Аудит
+GET {{base}}/api/admin/audit

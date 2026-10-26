@@ -44,6 +44,7 @@ def user_response(user: User) -> UserResponse:
         role=user.role,
         business_id=user.business_id,
         is_demo=user.is_demo,
+        can_sign=user.can_sign,
     )
     if business:
         details = (

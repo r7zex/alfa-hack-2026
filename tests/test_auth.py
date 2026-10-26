@@ -38,7 +38,7 @@ def auth_env(tmp_path):
         else {},
     )
     factory = async_sessionmaker(engine, expire_on_commit=False)
-    settings = Settings(_env_file=None, db_password="test-only")
+    settings = Settings(_env_file=None, db_password="test-only", pipeline_async_enabled=False, signing_require_code=False)
 
     async def setup():
         async with engine.begin() as connection:
@@ -533,7 +533,7 @@ def test_applications_use_the_authenticated_owner_and_csrf(auth_env):
         assert response.status_code == 200
         assert response.json()["currentStep"] == 3
         response = first.post(
-            "/api/applications/" + application_id + "/submit", headers=csrf(first)
+            "/api/applications/" + application_id + "/submit", headers=csrf(first), json={"demo_data": True, "demo_checks": True}
         )
         assert response.status_code == 200 and response.json()["status"] == "pending"
         assert first.post("/api/auth/logout", headers=csrf(first)).status_code == 204

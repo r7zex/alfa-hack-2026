@@ -1,0 +1,23 @@
+{
+  "source_file": "LightGBM.joblib",
+  "source_sha256": "1b9a0de1523b3c6bb64b269c960fafae169b570d9b056f3ea9198e63e3175f82",
+  "native_file": "artifacts/LightGBM_native.txt",
+  "native_sha256": "8f5b6d91d91873e2bf8df6c2a0e0a796f076faedddf8dc88e82d28ff5393d386",
+  "model": "LightGBMClassifier",
+  "original_container": "sklearn.Pipeline",
+  "source_sklearn_version": "1.8.0",
+  "num_trees": 450,
+  "num_features": 24,
+  "best_cv_pr_auc": 0.3468188047579757,
+  "n_folds": 3,
+  "target": "unknown_in_supplied_artifact",
+  "threshold": null,
+  "integration_status": "native_weights_available",
+  "pipeline_steps": [
+    "model: LGBMClassifier"
+  ],
+  "preprocessing": "single estimator step; classifier label encoding only; no feature transformer",
+  "objective": "binary",
+  "score_interpretation": "technical_class_1_score_only",
+  "units": "not supplied; synthetic profile units explicitly documented"
+}

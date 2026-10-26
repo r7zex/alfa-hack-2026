@@ -16,7 +16,7 @@ class CreditProduct:
 PRODUCTS = {
     product.id: product
     for product in (
-        CreditProduct("working", "Оборотный кредит", 100_000, 5_000_000, 3, 36, 24),
+        CreditProduct("working", "Оборотный кредит", 100_000, 5_000_000, 3, 24, 24),
         CreditProduct("equipment", "На оборудование", 300_000, 15_000_000, 6, 60, 21),
         CreditProduct("overdraft", "Овердрафт", 50_000, 2_000_000, 1, 12, 26),
     )

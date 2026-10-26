@@ -38,6 +38,8 @@ DEMO_EMAILS = {
     "llc": "ritm@demo.example.com",
     "ip": "anna@demo.example.com",
     "admin": "admin@demo.example.com",
+    "underwriter": "underwriter@demo.example.com",
+    "approver": "approver@demo.example.com",
 }
 
 
@@ -233,7 +235,7 @@ async def demo(
     if user and not user.is_demo:
         raise HTTPException(409, "Эта почта занята обычным аккаунтом")
     if not user:
-        role = UserRole.ADMIN if payload.account == "admin" else UserRole.CLIENT
+        role = UserRole(payload.account) if payload.account in {"admin", "underwriter", "approver"} else UserRole.CLIENT
         business = None
         if role == UserRole.CLIENT:
             inn, name = (
@@ -266,4 +268,11 @@ async def demo(
             raise HTTPException(
                 409, "Демо-аккаунт уже создается или ИНН занят. Повторите вход."
             ) from exc
+    if user.business and user.is_demo:
+        from datetime import date
+        from app.models.operations import FinancialProfile
+        from app.services.financial_features import STABLE,PROVENANCE
+        if user.business.registration is None:user.business.registration=date(2020,1,1)
+        if await db.get(FinancialProfile,user.business_id) is None:
+            db.add(FinancialProfile(business_id=user.business_id,kind='synthetic_stable',features=STABLE,provenance=PROVENANCE))
     return await sign_in(db, user, request, response, settings)

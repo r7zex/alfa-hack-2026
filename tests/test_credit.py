@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from pydantic import ValidationError
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -102,11 +102,13 @@ def test_response_serializes_current_step() -> None:
 def test_can_save_step_and_refuses_null_step() -> None:
     fake = SimpleNamespace(
         status="draft", product_id="working", amount=1_000_000,
-        months=12, current_step=0,
+        months=12, current_step=0, id=uuid4(), version=0, business_id=123,
     )
     service = ApplicationService(AsyncMock())
     service.get = AsyncMock(return_value=fake)
     service.repo.save = AsyncMock(side_effect=lambda application: application)
+    service.repo.session.add = Mock()
+    service.repo.session.execute.return_value.rowcount = 1
 
     async def check() -> None:
         result = await service.update(uuid4(), 123, ApplicationUpdate(currentStep=2))
@@ -137,6 +139,7 @@ def test_incomplete_application_cannot_be_submitted() -> None:
 def test_real_relationships_in_new_application() -> None:
     service = ApplicationService(AsyncMock())
     service.repo.add = AsyncMock(side_effect=lambda item: item)
+    service.repo.session.add = Mock()
     async def check():
         item = await service.create(42, 7, ApplicationCreate(productId="working", amount=1000000, months=12))
         assert (item.business_id, item.created_by_user_id, item.owner_id) == (42, 7, None)

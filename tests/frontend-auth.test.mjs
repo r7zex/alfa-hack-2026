@@ -49,3 +49,36 @@ test("auth adapter restores from server, attaches CSRF and clears expired identi
   assert.equal(users.at(-1), null);
   assert.equal(data.size, 0);
 });
+
+test("a delayed restore cannot expose a previous demo company's applications", async () => {
+  const store=await import('../app/static/js/store.mjs');
+  const identity=id=>({id,email:`demo${id}@example.com`,role:'client',is_demo:true,business:{type:'llc',name:`Company ${id}`}});
+  let resolveList;
+  const pending=new Promise(resolve=>{resolveList=resolve;});
+  const response=value=>({ok:true,status:200,json:async()=>value});
+  globalThis.fetch=async path=>path==='/api/applications'?pending:response(path==='/api/documents'?[]:{status:'approved',version:1,documents:[],history:[]});
+  store.useServerAuth(identity(41));const before=store.session().id;
+  const restore=store.restoreServerApplications();
+  store.useServerAuth(identity(42));assert.notEqual(store.session().id,before);
+  resolveList(response([{id:'old-company-app',status:'approved'}]));await restore;
+  assert.deepEqual(store.ownApplications(),[]);
+  store.useServerAuth(null);
+});
+
+test("an older response cannot replace a newer workflow after accepting terms", async () => {
+  const store=await import('../app/static/js/store.mjs');
+  store.useServerAuth({id:43,email:'race@example.com',role:'client',business:{type:'llc',name:'Race'}});
+  const response=value=>({ok:true,status:200,json:async()=>value});
+  let release,lists=0,newest=true;
+  globalThis.fetch=async path=>{
+    if(path==='/api/applications')return ++lists===1?new Promise(resolve=>{release=resolve;}):response([{id:'app',status:'approved',version:2}]);
+    if(path==='/api/documents')return response([]);
+    return response({status:newest?'offer_accepted':'approved',version:newest?3:1,documents:[],history:[]});
+  };
+  const old=store.restoreServerApplications();await store.restoreServerApplications();
+  assert.equal(store.ownApplications()[0].status,'offer_accepted');
+  newest=false;release(response([{id:'app',status:'approved',version:1}]));await old;
+  assert.equal(store.ownApplications()[0].version,3);
+  assert.equal(store.ownApplications()[0].status,'offer_accepted');
+  store.useServerAuth(null);
+});

@@ -17,11 +17,12 @@ services:
       start_period: 5s
 
   app:
+    image: ${DELORA_IMAGE:-delora-credit:local}
     build:
       context: .
     restart: unless-stopped
     env_file:
-      - .env
+      - ${APP_ENV_FILE:-.env}
     environment:
       DB_HOST: db
       DB_PORT: '5432'
@@ -31,11 +32,31 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/health\", timeout=3)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/ready\", timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  worker:
+    image: ${DELORA_IMAGE:-delora-credit:local}
+    pull_policy: never
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    env_file:
+      - ${APP_ENV_FILE:-.env}
+    environment:
+      DB_HOST: db
+      DB_PORT: '5432'
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker", "--health"]
+      interval: 15s
+      timeout: 8s
+      retries: 3
+      start_period: 20s
 
 volumes:
   postgres_data:

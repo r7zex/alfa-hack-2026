@@ -1,0 +1,104 @@
+name: Product verification
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  python-js:
+    runs-on: ubuntu-latest
+    env:
+      DB_PASSWORD: ci-synthetic-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: pip install -r requirements-dev.txt -r requirements-ml.txt
+      - run: python -m ruff check app ml scripts tests --select E9,F63,F7,F82
+      - run: python scripts/check_secrets.py
+      - run: python -m pytest -q
+      - run: node --test tests/frontend*.test.mjs
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: delora_ci
+          POSTGRES_PASSWORD: ci-synthetic-password
+          POSTGRES_DB: delora_ci_migrations
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U delora_ci -d delora_ci_migrations"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_USER: delora_ci
+      DB_PASSWORD: ci-synthetic-password
+      DB_NAME: delora_ci_migrations
+      PGPASSWORD: ci-synthetic-password
+      TEST_AUTH_DATABASE_URL: postgresql+psycopg://delora_ci:ci-synthetic-password@127.0.0.1:5432/delora_ci_tests
+      TEST_MIGRATION_DATABASE_URL: postgresql+psycopg://delora_ci:ci-synthetic-password@127.0.0.1:5432/delora_ci_migrations
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-dev.txt -r requirements-ml.txt
+      - run: psql -h 127.0.0.1 -U delora_ci -d delora_ci_migrations -c 'CREATE DATABASE delora_ci_tests'
+      - run: python -m pytest -q tests/test_auth.py tests/test_pipeline.py tests/test_analyst.py tests/test_product_operations.py tests/test_migrations.py
+      - run: python -m alembic upgrade head && python -m alembic check
+  docker-browser:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV_FILE: .env
+      APP_PORT: '18000'
+      E2E_BASE_URL: http://127.0.0.1:18000
+      E2E_SCREENSHOTS: /tmp/delora-e2e
+      DB_PASSWORD: ci-synthetic-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-e2e.txt -r requirements-ml.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: Isolated demo environment
+        run: |
+          cp .env.example .env
+          cat >> .env <<'ENV'
+          DB_PASSWORD=ci-synthetic-password
+          APP_PORT=18000
+          DEMO_AUTH_ENABLED=true
+          DEMO_SIGNING_CODE_VISIBLE=true
+          AUTH_REQUESTS_PER_MINUTE=1000
+          AUTH_EMAIL_REQUESTS_PER_MINUTE=1000
+          WORKER_BACKOFF_SECONDS=0.5
+          WORKER_LEASE_SECONDS=15
+          PIPELINE_STEP_DELAY_SECONDS=0.2
+          ENV
+          docker compose -p delora-ci up --build -d --wait --wait-timeout 180
+          docker compose -p delora-ci exec -T app python -m app.seed
+          docker compose -p delora-ci exec -T app python -m app.seed
+      - run: python -m pytest -q tests/e2e_product.py
+      - run: python -m pytest -q tests/e2e_worker_recovery.py
+        env:
+          E2E_DOCKER_PROJECT: delora-ci
+          E2E_ALLOW_WORKER_CRASH: '1'
+      - if: always()
+        run: docker compose -p delora-ci logs --no-color > /tmp/delora-compose.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-and-compose-evidence
+          path: |
+            /tmp/delora-e2e
+            /tmp/delora-compose.log
+      - if: always()
+        run: docker compose -p delora-ci down -v
