@@ -573,7 +573,7 @@ def test_api_uses_real_qwen_adapter_for_all_three_checks(chat_env):
     [
         ("qwen3.8:27b", "auto", "none"),
         ("qwen3.8", "auto", "none"),
-        ("library/qwen2.5:1.5b", "auto", "none"),
+        ("library/qwen3.8:27b", "auto", "none"),
         ("qwen2.5:7b", "auto", None),
         ("qwen2.5:1.5b", "auto", None),
         ("custom-alias", "none", "none"),
