@@ -8,6 +8,7 @@
 |---|---|
 | Python полный прогон | 178 passed,3 skipped; 248.81с |
 | PostgreSQL auth/pipeline/analyst/product | 46 passed; 285.83с, включая конкурентные решения/выдачу/claim |
+| Дополнительный PostgreSQL прогон точности ставки | 26 passed; ставка с третьим десятичным знаком отклоняется, договор/график используют одну Decimal-ставку |
 | JavaScript | 16 passed, включая delayed restore и смену двух demo-компаний |
 | Статический анализ | Ruff E9/F63/F7/F82 passed; node --check JS modules passed |
 | Upgrade существующей PostgreSQL схемы | Отдельный тест passed: сохранены account/password hash/session/draft при upgrade c001001→head |
@@ -49,4 +50,4 @@ A–G на итоговом Docker-образе: **7passed,1skipped за106.11с
 - Qwen H — реальная проверка двух сценариев на CPU; не доказательство качества всех ответов. На слабом CPU возможны минуты ожидания. При недоступной модели остальные функции работают.
 - PDF/CMS offline проверка не доказывает подлинность ФНС и актуальный отзыв сертификата.
 - Firefox/Safari, массовая нагрузка, production TLS/backup/HA не проверялись.
-- GitHub Actions настроен; локально выполнены соответствующие проверки. Статус GitHub run проверяется отдельно после push.
+- GitHub Actions выполнил Python/JS, PostgreSQL и Docker/browser/worker recovery: [первый полный успешный run](https://github.com/r7zex/alfa-hack-2026/actions/runs/40333513133). Последующие прогоны доступны во вкладке Actions PR.

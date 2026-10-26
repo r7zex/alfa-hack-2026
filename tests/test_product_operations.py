@@ -145,6 +145,7 @@ def test_escalation_counter_expiry_role_matrix_and_metrics(product_env):
         assert decision(underwriter,id_,'escalated').status_code==200
         assert decision(underwriter,id_).status_code==403
         assert approver.post(f'/api/analyst/applications/{id_}/assign',headers=csrf(approver)).status_code==200
+        assert decision(approver,id_,'counter_offer',alternativeAmount=9000000,months=48,annual_rate=19.555,product_id='equipment').status_code==422
         r=decision(approver,id_,'counter_offer',alternativeAmount=9000000,months=48,annual_rate=19.5,product_id='equipment',valid_days=1)
         assert r.status_code==200,r.text
         offer=flow(client,id_)['offers'][-1]

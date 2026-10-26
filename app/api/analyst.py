@@ -1,6 +1,7 @@
 """Bank analyst endpoints: role-checked access to submitted applications."""
 from typing import Annotated, Literal
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -45,7 +46,7 @@ class DecisionRequest(BaseModel):
     )
 
     months: int | None = Field(default=None,ge=1,le=120)
-    annual_rate: float | None = Field(default=None,ge=1,le=60)
+    annual_rate: Decimal | None = Field(default=None,ge=1,le=60,max_digits=4,decimal_places=2)
     product_id: str | None = Field(default=None,max_length=40)
     valid_days: int | None = Field(default=None,ge=1,le=30)
     tasks: list[TaskRequest] = Field(default_factory=list,max_length=20)

@@ -3774,6 +3774,9 @@
                 "minimum": 1.0
               },
               {
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ],

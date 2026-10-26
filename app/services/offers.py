@@ -1,5 +1,6 @@
 """Immutable, expiring offer versions and frozen contract text."""
 from datetime import timedelta
+from decimal import Decimal,ROUND_HALF_UP
 from hashlib import sha256
 from uuid import uuid4
 from sqlalchemy import select
@@ -14,6 +15,7 @@ async def create_offer(db,row,*,amount=None,months=None,annual_rate=None,product
     amount=amount if amount is not None else row.amount
     months=months if months is not None else row.months
     annual_rate=annual_rate if annual_rate is not None else PRODUCTS[product_id].annual_rate
+    annual_rate=Decimal(str(annual_rate)).quantize(Decimal('.01'),rounding=ROUND_HALF_UP)
     validate_product_terms(product_id,amount,months)
     plan=schedule(amount,annual_rate,months,overdraft=product_id=='overdraft')
     old=list((await db.scalars(select(CreditOffer).where(CreditOffer.application_id==row.id).order_by(CreditOffer.version))).all())
