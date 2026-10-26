@@ -43,6 +43,8 @@ export const PRODUCTS = [
 ];
 export const STATUS = {
   draft: "Черновик",
+  data_check: "Проверка данных", enrichment: "Проверка компании", scoring: "Оценка финансов", decision: "Формирование решения",
+  counter_offer: "Встречное предложение", escalated: "На согласовании", cancelled: "Отменена",
   pending: "На рассмотрении",
   approved: "Одобрено",
   rejected: "Отказано",

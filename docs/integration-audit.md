@@ -1,5 +1,7 @@
 # Аудит и происхождение интеграции
 
+Этот файл сохраняет исторический аудит первого этапа (a9dd487). Его ограничения ниже относятся к тому этапу. Последующий DELORA FINAL на той же ветке добавил настоящий native LightGBM, CPU Qwen2.5:1.5b, durable worker, роли, collaboration и графики. Актуальные проверенные результаты и границы — [acceptance.md](acceptance.md), [model-card.md](model-card.md), [competitor-gap-analysis.md](competitor-gap-analysis.md).
+
 Работа выполнена только в `feat/integrated-credit-pipeline`, основанной на
 `origin/main` 73bdcc08a008e05aef176fd22fa55dcb4e1ca8e9. Перед созданием ветки
 рабочее дерево было чистым; выполнены fetch и чтение удалённых веток.

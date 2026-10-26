@@ -26,3 +26,5 @@ __all__ = [
     "ApplicationDocument", "ApplicationEvent", "ProcessingRun", "CreditOffer",
     "DemoContract", "DemoDisbursement",
 ]
+
+from app.models.operations import (PipelineJob, WorkerHeartbeat, SourceSetting, PolicyVersion, SystemSetting, FinancialProfile, ModelPrediction, ApplicationTask, ApplicationMessage, MessageRead, Notification, DecisionRecord, SigningChallenge, LoanAccount, TeamInvitation, StreamLease)

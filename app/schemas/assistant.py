@@ -12,9 +12,11 @@ class AssistantInput(BaseModel):
 
 class AssistantMessageRequest(AssistantInput):
     request_id: UUID
+    application_id: UUID | None = None
+    share_application: bool = False
     message: str = Field(min_length=1, max_length=2000)
 
-    @field_validator("request_id", mode="before")
+    @field_validator("request_id", "application_id", mode="before")
     @classmethod
     def uuid_from_json(cls, value):
         return UUID(value) if isinstance(value, str) else value

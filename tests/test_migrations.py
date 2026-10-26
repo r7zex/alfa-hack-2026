@@ -32,6 +32,28 @@ from app.models.auth import Base
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.skipif(not os.getenv('TEST_MIGRATION_DATABASE_URL'),reason='Separate PostgreSQL migration database required')
+def test_postgres_incremental_upgrade_preserves_account_session_and_draft(monkeypatch):
+    from uuid import uuid4
+    url=os.environ['TEST_MIGRATION_DATABASE_URL']
+    assert 'migration' in url.rsplit('/',1)[-1], 'Use an empty disposable migrations database'
+    monkeypatch.setattr('app.settings.get_settings',lambda:SimpleNamespace(database_url=url))
+    config=Config(str(ROOT/'alembic.ini'));engine=create_engine(url)
+    assert not inspect(engine).has_table('alembic_version'),'Migration test requires an empty database'
+    command.upgrade(config,'a2026c001001')
+    id_=uuid4()
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO users (id,email,password_hash,role,is_demo) VALUES (9001,'preserved@example.com','old-hash','ADMIN',false)"))
+        conn.execute(text("INSERT INTO auth_sessions (id,user_id,token_hash,csrf_hash,expires_at,created_at) VALUES (:id,9001,:token,:csrf,now()+interval '1 day',now())"),{'id':str(id_),'token':'a'*64,'csrf':'b'*64})
+        conn.execute(text("INSERT INTO loan_applications (id,owner_id,product_id,amount,months,status,current_step) VALUES (:id,'legacy','working',1000000,12,'draft',2)"),{'id':id_})
+    command.upgrade(config,'head');command.check(config)
+    with engine.connect() as conn:
+        assert conn.execute(text('SELECT email,password_hash,can_sign FROM users WHERE id=9001')).one()==('preserved@example.com','old-hash',True)
+        assert conn.scalar(text('SELECT count(*) FROM auth_sessions WHERE user_id=9001'))==1
+        assert conn.execute(text('SELECT amount,status,current_step,decision_mode FROM loan_applications')).one()==(1000000,'draft',2,'manual')
+    engine.dispose()
+
+
 def run_alembic(*args: str, cwd: Path) -> str:
     env = os.environ.copy()
     env["DB_PASSWORD"] = "migration-test-only"

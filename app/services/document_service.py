@@ -43,12 +43,22 @@ class DocumentService:
             filename = PurePosixPath((upload.filename or "document.pdf").replace(chr(92), "/")).name
             filename = "".join(c for c in filename if c.isprintable())[:255] or "document.pdf"
             doc_id = uuid4()
+            document=Document(id=doc_id,business_id=owner,document_type=document_type,application_id=application_id,
+                              filename=filename,content_type='application/pdf',size=len(content),
+                              sha256=sha256(content).hexdigest(),content=content,signature=signature)
+            self.session.add(document)
+            await self.session.flush()
             if row:
-                await event(self.session, row, user_id, row.status, "Прикреплён документ", {"document_id": str(doc_id)})
-                self.session.add(ApplicationDocument(application_id=row.id, document_id=doc_id))
-            return await self.repo.add(Document(
-                id=doc_id, business_id=owner, document_type=document_type, application_id=application_id, filename=filename, content_type="application/pdf",
-                size=len(content), sha256=sha256(content).hexdigest(), content=content, signature=signature))
+                self.session.add(ApplicationDocument(application_id=row.id,document_id=doc_id))
+                await event(self.session,row,user_id,row.status,'Прикреплён документ',{'document_id':str(doc_id)})
+                from app.models.operations import ApplicationTask
+                tasks=(await self.session.scalars(select(ApplicationTask).where(ApplicationTask.application_id==row.id,
+                       ApplicationTask.status=='OPEN',ApplicationTask.kind=='document',ApplicationTask.document_type==document_type))).all()
+                from app.services.operations import utcnow,notify
+                for task in tasks:
+                    task.status='DONE';task.document_id=doc_id;task.completed_at=utcnow()
+                    await notify(self.session,row,'task:'+str(task.id),'task','Клиент предоставил документ',bank=True)
+            return await self.repo.add(document)
         except OSError as exc:
             raise HTTPException(503, "Cannot read uploaded PDF") from exc
         except SQLAlchemyError as exc:

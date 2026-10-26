@@ -1,8 +1,7 @@
-"""Notebook's final 70/15/15 focal experiment and explicit offline recovery.
+"""Standard binary-log-loss LightGBM; validation AP selection and F2 threshold.
 
-Artifacts are trusted local joblib files: never load client-supplied pickle paths.
+Artifacts contain checksum JSON and native model text; pickle is never loaded.
 """
-from dataclasses import dataclass
 from pathlib import Path
 from contextlib import contextmanager
 import hashlib
@@ -13,10 +12,8 @@ import subprocess
 import sys
 import tempfile
 import fcntl
-import joblib
 import numpy as np
 import pandas as pd
-from scipy.special import expit
 from sklearn.metrics import (
     average_precision_score, roc_auc_score, precision_recall_curve,
     precision_score, recall_score, f1_score, fbeta_score, confusion_matrix,
@@ -26,8 +23,8 @@ from ml.eda_legal import prepare_legal
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ARTIFACT = ROOT / "artifacts/model_legal.joblib"
-FORMAT_VERSION = 1
-GAMMAS = np.arange(0, 7.01, 0.5)
+FORMAT_VERSION = 2
+CANDIDATES = (15, 31, 63)
 PARAMS = dict(n_estimators=400, learning_rate=0.05, num_leaves=31, max_depth=-1,
               min_child_samples=30, reg_lambda=1.0, random_state=42,
               n_jobs=-1, verbosity=-1)
@@ -37,32 +34,10 @@ class ScoringError(ValueError):
     """Controlled model, data or schema failure, never a substitute score."""
 
 
-@dataclass(frozen=True)
-class FocalObjective:
-    gamma: float
-    pos_weight: float
-
-    def __call__(self, y_true, raw_pred):
-        p = expit(np.clip(raw_pred, -20, 20))
-        pt = np.where(y_true == 1, p, 1 - p)
-        pt = np.clip(pt, 1e-8, 1 - 1e-8)
-        q = 1 - pt
-        sign = np.where(y_true == 1, 1.0, -1.0)
-        weight = np.where(y_true == 1, self.pos_weight, 1.0)
-        gamma = self.gamma
-        grad = weight * sign * (gamma * pt * q**gamma * np.log(pt) - q**(gamma + 1))
-        if gamma == 0:
-            hess = weight * pt * q
-        else:
-            hess = weight * pt * q * (
-                q**gamma * (2 * gamma + 1 + gamma * np.log(pt))
-                - gamma**2 * pt * q**(gamma - 1) * np.log(pt)
-            )
-        return grad, np.maximum(hess, 1e-4)
-
-
 def predict_scores(model, features):
-    return expit(model.predict(features, raw_score=True))
+    if hasattr(model, 'predict_proba'):
+        return np.asarray(model.predict_proba(features))[:, 1]
+    return np.asarray(model.predict(features, num_threads=1))
 
 
 def split_data(features, target):
@@ -100,79 +75,65 @@ def calculate_metrics(target, scores, threshold):
 
 def fit_experiment(features, target):
     from lightgbm import LGBMClassifier
-    # Canonical module name also when invoked with python -m ml.train_legal.
-    from ml.train_legal import FocalObjective as Objective
     x_train, x_val, x_test, y_train, y_val, y_test = split_data(features, target)
-    pos_weight = float(np.sqrt((y_train == 0).sum() / (y_train == 1).sum()))
-    rows, models = [], {}
-    for gamma in GAMMAS:
-        gamma = float(gamma)
-        model = LGBMClassifier(objective=Objective(gamma, pos_weight), **PARAMS)
-        model.fit(x_train, y_train)
-        val_scores = predict_scores(model, x_val)
-        rows.append(dict(gamma=gamma, Val_AP=float(average_precision_score(y_val, val_scores)),
-                         Val_ROC_AUC=float(roc_auc_score(y_val, val_scores))))
-        models[gamma] = model
-    # Same pandas sorting / tie behaviour as the final notebook cell.
-    comparison = pd.DataFrame(rows).sort_values("Val_AP", ascending=False).reset_index(drop=True)
-    gamma = float(comparison.iloc[0]["gamma"])
-    model = models[gamma]
-    val_scores = predict_scores(model, x_val)
-    threshold = choose_threshold(y_val, val_scores)
-    metrics = {
-        name: calculate_metrics(y, predict_scores(model, x), threshold)
-        for name, x, y in (("Train", x_train, y_train), ("Validation", x_val, y_val),
-                           ("Test", x_test, y_test))
-    }
-    return dict(format_version=FORMAT_VERSION, model_type="legal", model=model,
-                feature_names=list(features.columns), params=PARAMS.copy(), gamma=gamma,
-                threshold=threshold, pos_weight=pos_weight,
-                objective={"name": "focal", "gamma": gamma, "pos_weight": pos_weight,
-                           "hessian_floor": 1e-4, "raw_score_sigmoid": True},
-                metrics=metrics, validation_comparison=comparison.to_dict(orient="records"),
-                target="bankrupt", experiment="70/15/15; seed=42; validation AP and F2")
+    comparisons, models = [], []
+    for leaves in CANDIDATES:
+        params = {**PARAMS, 'num_leaves': leaves}
+        model = LGBMClassifier(objective='binary', **params).fit(x_train, y_train)
+        scores = predict_scores(model, x_val)
+        comparisons.append(dict(num_leaves=leaves, Val_AP=float(average_precision_score(y_val, scores))))
+        models.append(model)
+    best = max(range(len(models)), key=lambda i: comparisons[i]['Val_AP'])
+    model = models[best]
+    threshold = choose_threshold(y_val, predict_scores(model, x_val))
+    # Test predictions are used only after model and threshold are fixed.
+    metrics = {name: calculate_metrics(y, predict_scores(model, x), threshold)
+               for name,x,y in [('Train',x_train,y_train),('Validation',x_val,y_val),('Test',x_test,y_test)]}
+    return dict(format_version=FORMAT_VERSION, model_type='legal', model=model,
+                feature_names=list(features.columns), threshold=threshold, objective={'name':'binary'},
+                positive_class=1, target='bankrupt', metrics=metrics,
+                params=model.get_params(), validation_comparison=comparisons,
+                experiment='70/15/15; seed=42; validation AP and F2; isolated test')
 
 
 def validate_artifact(artifact):
     try:
-        if not isinstance(artifact, dict):
-            raise ValueError("Expected a mapping")
-        if artifact["format_version"] != FORMAT_VERSION or artifact["model_type"] != "legal":
-            raise ValueError("Incompatible format or borrower type")
-        names = artifact["feature_names"]
-        if not names or len(set(names)) != len(names) or not all(isinstance(n, str) for n in names):
-            raise ValueError("Invalid feature names")
-        model = artifact["model"]
-        if list(model.feature_name_) != names:
-            raise ValueError("Model and artifact feature schemas differ")
-        if not 0 <= float(artifact["threshold"]) <= 1 or artifact["gamma"] not in GAMMAS:
-            raise ValueError("Invalid gamma or threshold")
-        objective = artifact["objective"]
-        if (objective["name"] != "focal" or objective["raw_score_sigmoid"] is not True
-                or objective["gamma"] != artifact["gamma"]
-                or objective["hessian_floor"] != 1e-4):
-            raise ValueError("Incompatible objective")
-        actual_objective = model.get_params()["objective"]
-        if (not isinstance(actual_objective, FocalObjective)
-                or actual_objective.gamma != artifact["gamma"]
-                or actual_objective.pos_weight != objective["pos_weight"]
-                or not np.isfinite(objective["pos_weight"]) or objective["pos_weight"] <= 0):
-            raise ValueError("Model objective differs from artifact metadata")
-    except (KeyError, AttributeError, TypeError, ValueError) as exc:
-        raise ScoringError(f"Incompatible legal artifact: {exc}") from exc
+        if artifact['format_version'] != FORMAT_VERSION or artifact['model_type'] != 'legal':
+            raise ValueError('Incompatible format or borrower type')
+        names=artifact['feature_names']
+        model=artifact['model']
+        actual_names=list(model.feature_name_) if hasattr(model,'feature_name_') else model.feature_name()
+        if not names or len(set(names)) != len(names) or names != actual_names:
+            raise ValueError('Model and artifact feature schemas differ')
+        if artifact['objective'] != {'name':'binary'} or artifact['positive_class'] != 1:
+            raise ValueError('Binary objective and positive class must be explicit')
+        if not 0 <= float(artifact['threshold']) <= 1:
+            raise ValueError('Invalid threshold')
+        native=model.booster_ if hasattr(model,'booster_') else model
+        if 'objective=binary' not in native.model_to_string().split('feature_names=')[0]:
+            raise ValueError('Model is not a binary-log-loss classifier')
+    except (KeyError,AttributeError,TypeError,ValueError) as exc:
+        raise ScoringError(f'Incompatible legal artifact: {exc}') from exc
     return artifact
 
 
 def load_artifact(artifact_path):
+    # The historical filename is retained, but new artifacts are JSON + native
+    # model text. Old pickle files are rejected without executing deserialization.
     try:
-        content = Path(artifact_path).read_bytes()
-        artifact = validate_artifact(joblib.load(BytesIO(content)))
-        artifact["_artifact_id"] = hashlib.sha256(content).hexdigest()
-        return artifact
+        import lightgbm as lgb
+        content=Path(artifact_path).read_bytes()
+        artifact=json.loads(content)
+        native=artifact.pop('native_model')
+        if hashlib.sha256(native.encode()).hexdigest()!=artifact.pop('native_sha256'):
+            raise ValueError('Native checksum mismatch')
+        artifact['model']=lgb.Booster(model_str=native)
+        artifact['_artifact_id']=hashlib.sha256(content).hexdigest()
+        return validate_artifact(artifact)
     except ScoringError:
         raise
     except Exception as exc:
-        raise ScoringError(f"Cannot load legal artifact: {type(exc).__name__}") from exc
+        raise ScoringError(f'Cannot load legal artifact: {type(exc).__name__}') from exc
 
 
 def validate_features(features, names):
@@ -206,37 +167,28 @@ def artifact_lock(path):
 
 
 def save_artifact(artifact, path, sample, *, allow_replace=False):
-    path = Path(path)
-    if path.name != "model_legal.joblib":
-        raise ScoringError("Legal weights must use filename model_legal.joblib")
+    path=Path(path)
+    if path.name not in {'model_legal.joblib','model_legal.json'}:
+        raise ScoringError('Legal weights must use filename model_legal.joblib or model_legal.json')
     if path.exists() and not allow_replace:
-        raise ScoringError("Existing artifact preserved; explicit allow_replace is required")
+        raise ScoringError('Existing artifact preserved; explicit allow_replace is required')
     validate_artifact(artifact)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(prefix=".legal-", dir=path.parent)
+    model=artifact['model']
+    native=(model.booster_ if hasattr(model,'booster_') else model).model_to_string()
+    data={k:v for k,v in artifact.items() if k!='model' and not k.startswith('_')}
+    data.update(native_model=native,native_sha256=hashlib.sha256(native.encode()).hexdigest())
+    path.parent.mkdir(parents=True,exist_ok=True)
+    handle,temporary=tempfile.mkstemp(prefix='.legal-',dir=path.parent)
     os.close(handle)
     try:
-        joblib.dump(artifact, temporary)
-        # A new interpreter proves that the objective is importable and picklable.
-        code = ("import sys,json,joblib; from io import BytesIO; "
-                "from ml.train_legal import load_artifact,predict_scores; "
-                "a=load_artifact(sys.argv[1]); x=joblib.load(BytesIO(sys.stdin.buffer.read())); "
-                "print(json.dumps(predict_scores(a['model'],x).tolist()))")
-        payload = BytesIO()
-        joblib.dump(sample, payload)
-        result = subprocess.run([sys.executable, "-c", code, temporary], cwd=ROOT,
-                                input=payload.getvalue(), capture_output=True, timeout=120)
-        if result.returncode:
-            raise ScoringError("Artifact failed prediction check in a new process")
-        if not np.allclose(json.loads(result.stdout), predict_scores(artifact["model"], sample),
-                           rtol=1e-8, atol=1e-10):
-            raise ScoringError("Predictions changed after joblib reload")
-        if allow_replace:
-            os.replace(temporary, path)
-        else:
-            os.link(temporary, path)  # Atomic create; never overwrites another process.
+        Path(temporary).write_text(json.dumps(data),encoding='utf-8')
+        loaded=load_artifact(temporary)
+        if not np.allclose(predict_scores(loaded['model'],sample),predict_scores(model,sample),atol=1e-9):
+            raise ScoringError('Native round-trip predictions changed')
+        if allow_replace:os.replace(temporary,path)
+        else:os.link(temporary,path)
     except FileExistsError as exc:
-        raise ScoringError("Existing artifact preserved") from exc
+        raise ScoringError('Existing artifact preserved') from exc
     finally:
         Path(temporary).unlink(missing_ok=True)
 
@@ -300,7 +252,7 @@ def main():
     parser.add_argument("--allow-replace", action="store_true")
     args = parser.parse_args()
     artifact = train_legal(args.csv_path, allow_replace=args.allow_replace)
-    print(json.dumps({k: artifact[k] for k in ("gamma", "threshold", "metrics")}, indent=2))
+    print(json.dumps({k: artifact[k] for k in ("threshold", "metrics")}, indent=2))
 
 
 if __name__ == "__main__":

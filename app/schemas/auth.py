@@ -104,6 +104,7 @@ class UserResponse(BaseModel):
     role: UserRole
     business_id: int | None
     is_demo: bool = False
+    can_sign: bool = True
     business: BusinessResponse | None = None
 
 
@@ -150,4 +151,4 @@ class ProfileUpdateRequest(AuthInput):
 
 
 class DemoLoginRequest(AuthInput):
-    account: Literal["ip", "llc", "admin"]
+    account: Literal["ip", "llc", "admin", "underwriter", "approver"]

@@ -43,7 +43,7 @@ def flow(client, id_):
 
 def decision(admin, id_, status='approved', **changes):
     return admin.post(f'/api/analyst/applications/{id_}/decision', headers=csrf(admin),
-                      json={'status': status, 'comment': 'Синтетическое решение аналитика', **changes})
+                      json={'status': status, 'expectedVersion':flow(admin,id_)['version'],'comment': 'Синтетическое решение аналитика', **changes})
 
 
 def action(client, id_, offer, operation, **changes):
@@ -130,6 +130,9 @@ def test_source_outcomes_and_recovery(auth_env, scenario, expected):
         else:
             assert decision(admin,id_,'needs_info').status_code == 200
             assert client.patch(f'/api/applications/{id_}',headers=csrf(client),json={'mockScenario':'success'}).status_code == 200
+            for task in flow(client,id_)['tasks']:
+                if task['status']=='OPEN':
+                    assert client.post(f'/api/applications/{id_}/tasks/{task["id"]}/complete',headers=csrf(client),json={'answer':'Синтетические сведения уточнены'}).status_code==200
             submit(client,id_)
         assert flow(client,id_)['assessments'][-1]['policy']['recommendation'] == 'recommend_approval'
         assert decision(admin,id_).status_code == 200
@@ -194,7 +197,7 @@ def test_concurrent_submit_decisions_accept_sign_and_disburse(auth_env):
                 return list(pool.map(request,range(4)))
         assert parallel(client,f'/api/applications/{id_}/submit',CONSENT)==[200]*4
         assert len(flow(client,id_)['assessments'])==1
-        statuses=parallel(admin,f'/api/analyst/applications/{id_}/decision',{'status':'approved','comment':'Параллельный запрос'})
+        statuses=parallel(admin,f'/api/analyst/applications/{id_}/decision',{'status':'approved','expectedVersion':flow(admin,id_)['version'],'comment':'Параллельный запрос'})
         assert statuses.count(200)==1 and statuses.count(409)==3
         offer=flow(client,id_)['offers'][-1]
         for op in ['accept','sign','disburse']:

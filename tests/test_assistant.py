@@ -68,6 +68,21 @@ def send(client, message="Какой кредит выбрать?", revision=0, 
     )
 
 
+def test_application_context_requires_consent_and_ownership_and_is_minimal(chat_env):
+    from test_pipeline import create
+    _,_,model=chat_env
+    with TestClient(app) as owner,TestClient(app) as other:
+        signup(owner);signup(other,'ip','context-other@example.com');id_=create(owner)
+        assert send(owner,application_id=id_).status_code==422
+        assert send(other,application_id=id_,share_application=True).status_code==404
+        assert not model.calls
+        model.answer()
+        response=send(owner,application_id=id_,share_application=True);assert response.status_code==200
+        payload=json.dumps(model.calls[1][1],ensure_ascii=False)
+        assert id_ not in payload and 'password' not in payload and 'inn' not in payload
+        assert 'working' in payload and '1000000' in payload and 'draft' in payload
+
+
 def test_chat_persists_with_auth_csrf_and_idempotency(chat_env):
     _, _, model = chat_env
     with TestClient(app) as client:

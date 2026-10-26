@@ -38,7 +38,7 @@ def auth_env(tmp_path):
         else {},
     )
     factory = async_sessionmaker(engine, expire_on_commit=False)
-    settings = Settings(_env_file=None, db_password="test-only")
+    settings = Settings(_env_file=None, db_password="test-only", pipeline_async_enabled=False, signing_require_code=False)
 
     async def setup():
         async with engine.begin() as connection:

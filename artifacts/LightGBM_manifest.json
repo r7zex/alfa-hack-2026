@@ -12,5 +12,12 @@
   "n_folds": 3,
   "target": "unknown_in_supplied_artifact",
   "threshold": null,
-  "integration_status": "offline_adapter_only"
+  "integration_status": "native_weights_available",
+  "pipeline_steps": [
+    "model: LGBMClassifier"
+  ],
+  "preprocessing": "single estimator step; classifier label encoding only; no feature transformer",
+  "objective": "binary",
+  "score_interpretation": "technical_class_1_score_only",
+  "units": "not supplied; synthetic profile units explicitly documented"
 }

@@ -1,5 +1,6 @@
 import { escape as e } from "./domain.mjs";
 import { icon } from "./ui.mjs";
+import { ownApplications } from "./store.mjs";
 import { apiRequest } from "./auth.mjs";
 import { makeId } from "./runtime.mjs";
 
@@ -117,7 +118,7 @@ export function assistant(userId) {
       <div class="assistant-compose">
         ${state.error ? `<div class="assistant-error" role="alert"><p>${e(state.error)}</p><button id="assistant-retry" class="button secondary" type="button">${state.pending ? "Повторить отправку" : "Обновить переписку"}</button>${state.pending ? '<button id="assistant-edit" class="button text" type="button">Изменить вопрос</button>' : ""}</div>` : ""}
         ${state.loaded && !state.available ? '<p class="assistant-error" role="status">Ассистент временно недоступен. Повторите позже.</p>' : ""}
-        <form id="assistant-form"><label class="sr-only" for="assistant-message">Сообщение ассистенту</label><textarea id="assistant-message" name="message" rows="2" maxlength="${MAX_MESSAGE_LENGTH}" placeholder="Задайте вопрос о кредите..." aria-describedby="assistant-input-hint assistant-counter" ${ready && !state.pending ? "" : "disabled"} required>${e(state.draft)}</textarea><button class="button primary assistant-send" type="submit" aria-label="Отправить сообщение" ${ready && !state.pending && state.draft.trim() ? "" : "disabled"}>${icon("send")}</button></form>
+        <div class="assistant-context"><label class="field"><span>Контекст своей заявки</span><select id="assistant-application"><option value="">Без контекста заявки</option>${ownApplications().map(a=>`<option value="${e(a.id)}">Заявка ${e(a.id.slice(0,8).toUpperCase())}</option>`).join("")}</select></label><label class="check-field"><input type="checkbox" id="assistant-share"><span>Разрешаю передать ассистенту статус, условия и сохранённые причины решения выбранной заявки</span></label></div><form id="assistant-form"><label class="sr-only" for="assistant-message">Сообщение ассистенту</label><textarea id="assistant-message" name="message" rows="2" maxlength="${MAX_MESSAGE_LENGTH}" placeholder="Задайте вопрос о кредите..." aria-describedby="assistant-input-hint assistant-counter" ${ready && !state.pending ? "" : "disabled"} required>${e(state.draft)}</textarea><button class="button primary assistant-send" type="submit" aria-label="Отправить сообщение" ${ready && !state.pending && state.draft.trim() ? "" : "disabled"}>${icon("send")}</button></form>
         <div class="assistant-compose-meta"><span id="assistant-input-hint">Enter - отправить, Shift+Enter - новая строка</span><span id="assistant-counter">${state.draft.length}/${MAX_MESSAGE_LENGTH}</span></div>
         <p class="assistant-disclaimer">Переписка сохраняется в вашем аккаунте. Ответы справочные; решение по кредиту принимает банк. Условия продуктов демонстрационные.</p>
       </div>
@@ -147,7 +148,12 @@ export function mountAssistant(userId) {
   async function submit(text, retry = false) {
     const value = text.trim().slice(0, MAX_MESSAGE_LENGTH);
     if (!value || state.sending || state.busy || !state.loaded || !state.available || (!retry && state.pending)) return;
-    if (!retry) state.pending = {message: value, request_id: makeId(), revision: state.revision};
+    if (!retry) {
+      const applicationId=document.getElementById("assistant-application")?.value;
+      const share=document.getElementById("assistant-share")?.checked;
+      if(share&&!applicationId){state.error="Выберите свою заявку для передачи контекста";refresh(userId,state);return;}
+      state.pending={message:value,request_id:makeId(),revision:state.revision,...(share?{application_id:applicationId,share_application:true}:{})};
+    }
     state.draft = "";
     state.error = "";
     state.sending = true;

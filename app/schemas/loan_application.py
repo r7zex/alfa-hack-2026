@@ -12,8 +12,9 @@ class ApplicationCreate(BaseModel):
     product_id: str = Field(validation_alias=AliasChoices("productId", "product_id"))
     amount: int = Field(gt=0, le=1_000_000_000)
     months: int = Field(gt=0, le=120)
-    mock_scenario: Literal["success", "missing", "negative", "unavailable", "malformed"] = Field(default="success", validation_alias=AliasChoices("mockScenario", "mock_scenario"))
+    mock_scenario: Literal["success", "missing", "negative", "unavailable", "malformed", "timeout", "transient"] = Field(default="success", validation_alias=AliasChoices("mockScenario", "mock_scenario"))
     document_ids: list[UUID] | None = Field(default=None, max_length=30, validation_alias=AliasChoices("documentIds", "document_ids"))
+    decision_mode: Literal["auto", "manual"] = Field(default="manual", validation_alias=AliasChoices("decisionMode", "decision_mode"))
     purpose: str | None = Field(default=None, max_length=500)
     revenue: int | None = Field(default=None, ge=0, le=10_000_000_000)
     expenses: int | None = Field(default=None, ge=0, le=10_000_000_000)
@@ -40,6 +41,9 @@ class ApplicationRead(BaseModel):
     expenses: int | None
     debt_payment: int | None = Field(serialization_alias="debtPayment")
     status: str
+    version: int = 0
+    decision_mode: str = Field(default="manual", serialization_alias="decisionMode")
+    assigned_to_user_id: int | None = Field(default=None, serialization_alias="assignedToUserId")
     decision_comment: str | None = Field(default=None, serialization_alias="comment")
     alternative_amount: int | None = Field(default=None, serialization_alias="alternativeAmount")
     decided_at: datetime | None = Field(default=None, serialization_alias="decidedAt")

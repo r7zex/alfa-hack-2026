@@ -39,7 +39,19 @@ async def message(
     model: Model,
 ):
     business_type = user.business.type.value if user.business else None
-    return await send_message(db, user.id, business_type, payload, settings, model)
+    context=None
+    if payload.application_id:
+        from fastapi import HTTPException
+        from app.services.application_service import ApplicationService
+        if not payload.share_application:raise HTTPException(422,'Подтвердите передачу контекста своей заявки')
+        application=await ApplicationService(db).get(payload.application_id,user.business_id)
+        from app.services.pipeline import latest_run
+        run=await latest_run(db,application)
+        context={'status':application.status,'product_id':application.product_id,
+                 'amount':application.amount,'months':application.months,
+                 'decision_comment':application.decision_comment,
+                 'reasons':run.policy.get('reasons',[]) if run else []}
+    return await send_message(db, user.id, business_type, payload, settings, model, context)
 
 
 @router.post("/reset", response_model=AssistantState)

@@ -32,7 +32,7 @@ class QwenClient:
             "stream": False,
             "response_format": {"type": "json_object"},
             # A truncated JSON response is rejected, never shown to the user.
-            "max_tokens": 2048,
+            "max_tokens": 512 if "answer" in schema.model_fields else 48,
         }
         # Ollama enables thinking by default for Qwen 3.8. Disable it so the
         # scope checks and generator return their final JSON within the budget.

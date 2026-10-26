@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import select, or_
 from app.api.applications import Client, Session, get_business_id
-from app.dependencies import Auth
+from app.dependencies import Auth,BANK_ROLES
 from app.models.auth import UserRole
 from app.models.document import Document
 from app.schemas.document import DocumentRead
@@ -36,13 +36,13 @@ async def upload_document(application_id: UUID, db: Session, user: Client,
 
 @router.get('/{document_id}', response_model=DocumentRead)
 async def get_document(document_id: UUID, db: Session, auth: Auth):
-    return await DocumentService(db).get(document_id, auth.user.business_id, admin=auth.user.role == UserRole.ADMIN)
+    return await DocumentService(db).get(document_id, auth.user.business_id, admin=auth.user.role in BANK_ROLES)
 
 
 @router.get('/{document_id}/content')
 async def read_document(document_id: UUID, db: Session, auth: Auth):
     row = await DocumentService(db).get(document_id, auth.user.business_id, with_content=True,
-                                        admin=auth.user.role == UserRole.ADMIN)
+                                        admin=auth.user.role in BANK_ROLES)
     return Response(row.content, media_type='application/pdf', headers={
         'Content-Disposition': f'attachment; filename="{row.id}.pdf"',
         'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store',

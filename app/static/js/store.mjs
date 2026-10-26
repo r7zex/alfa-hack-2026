@@ -200,14 +200,18 @@ export function invalidate() {
 }
 let serverAuth = false;
 let serverUser = null;
+let authGeneration=0,restoreSequence=0;
 export function useServerAuth(user) {
+  authGeneration++;restoreSequence++;
   if (!serverAuth || serverUser?.email !== user?.email) state = {version: 1, users: [], applications: [], documents: []};
   serverAuth = true;
   serverUser = user ? {
     ...user.business,
-    id: user.role === "admin" ? "admin" : user.is_demo ? "demo-" + user.business.type : "user-" + user.id,
+    id: ["admin","underwriter","approver"].includes(user.role) ? "admin" : "user-" + user.id,
     email: user.email,
     role: user.role,
+    can_sign: user.can_sign,
+    userId: user.id,
     registration: user.business?.registration || "",
   } : null;
   // Remove the old browser-only sign-in marker during migration.
@@ -336,8 +340,10 @@ async function fileOperation(mode, operation) {
 }
 export async function addDocument(file, type, applicationId = null) {
   if (serverAuth) {
+    const identity=serverUser;
     const data = new FormData(); data.append("file", file); data.append("document_type", type);
     const doc = await apiRequest("/api/documents" + (applicationId ? "/" + encodeURIComponent(applicationId) : ""), {method: "POST", body: data});
+    if(identity!==serverUser)throw Error("Сессия изменилась. Откройте документы заново.");
     const normalized = documentRow(doc, session()?.id);
     update(s => s.documents.push(normalized));
     return normalized;
@@ -417,8 +423,12 @@ function demoOwner() {
   return serverOwners.includes(owner) ? owner : null;
 }
 function perform(owner, task) {
+  const identity=serverUser;
   const prior = queue.get(owner) || Promise.resolve();
-  const current = prior.catch(() => {}).then(task);
+  const current = prior.catch(() => {}).then(()=>{
+    if(serverAuth&&serverUser!==identity)throw Error("Сессия изменилась. Войдите заново.");
+    return task();
+  });
   queue.set(owner, current);
   return current;
 }
@@ -434,6 +444,7 @@ function payload(row) {
     expenses: nullable(row.expenses), debtPayment: nullable(row.debtPayment),
     currentStep: row.currentStep ?? 0,
     mockScenario: row.mockScenario || "success",
+    decisionMode: row.decisionMode || "auto",
     documentIds: (row.documentIds || []).filter(id => serverIds.test(id)),
   };
 }
@@ -472,27 +483,28 @@ function documentRow(doc, owner) {
 export async function restoreServerApplications() {
   const owner = demoOwner();
   if (!owner) return;
+  const generation=authGeneration,sequence=++restoreSequence;
   const rows = await apiRequest("/api/applications");
   const [documents, flows] = await Promise.all([
     apiRequest("/api/documents"),
     Promise.all(rows.map(row => apiRequest(`/api/applications/${row.id}/workflow`))),
   ]);
-  if (session()?.id !== owner) return;
+  if (session()?.id !== owner||generation!==authGeneration||sequence!==restoreSequence) return;
   update(s => {
     s.documents = documents.map(d => documentRow(d, owner));
     s.applications = rows.map((row, i) => ({
-      ...row, ownerId: owner, profile: cloneData(currentUser()), workflow: flows[i],
+      ...row, status:flows[i].status,version:flows[i].version,ownerId: owner, profile: cloneData(currentUser()), workflow: flows[i],
       documentIds: flows[i].documents.map(d => d.id),
       history: flows[i].history.filter(h => h.old_status !== h.new_status || h.reason !== "Данные заявки обновлены").map(h => ({text: h.reason, at: h.created_at})),
     }));
   });
 }
-export async function dealAction(id, action, acknowledged = false) {
+export async function dealAction(id, action, acknowledged = false, extra = {}) {
   const app = ownApplications().find(a => a.id === id);
   const offer = app?.workflow?.offers?.at(-1);
   if (!offer) throw Error("Предложение отсутствует. Обновите заявку.");
   await apiRequest(`/api/applications/${id}/offer/${action}`, {method: "POST", body: {
-    offer_id: offer.id, acknowledged, contract_sha256: offer.contract_sha256,
+    offer_id: offer.id, acknowledged, contract_sha256: offer.contract_sha256, ...extra,
   }});
   await restoreServerApplications();
 }

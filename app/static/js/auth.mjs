@@ -84,3 +84,8 @@ export async function changePassword(data) {
   csrfToken = "";
   onUser(null);
 }
+
+export async function scenarioSignIn(key){
+  const result=await apiRequest("/api/demo/login",{method:"POST",body:{key}});
+  csrfToken=result.csrf_token;onUser(result.user);return result.user;
+}

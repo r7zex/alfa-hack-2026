@@ -1,74 +1,93 @@
-# Архитектура интегрированного кабинета
+# Архитектура, состояния и ERD
 
 ```mermaid
 flowchart LR
-  UI[Существующий HTML / ES modules] --> API[FastAPI + session / CSRF / roles]
-  API --> Draft[ApplicationService]
-  API --> Analyst[API аналитика]
-  Draft --> Workflow[Транзакционная state machine]
-  Analyst --> Workflow
-  Workflow --> Sources[Локальные mock ЕГРЮЛ/ЕГРИП, БКИ, финансы]
-  Workflow --> Policy[Демо-политика и объяснимые баллы]
-  API --> PDF[PDF / offline CMS validation]
-  API --> Chat[Изолированный assistant service]
-  Chat -. optional .-> Qwen[OpenAI-compatible Qwen]
+  UI[ES modules · сохранённый дизайн] -->|HttpOnly cookie + CSRF| API[FastAPI]
   API --> PG[(PostgreSQL)]
-  Workflow --> PG
+  API -->|SSE · cookie · Last-Event-ID| UI
+  PG -->|SKIP LOCKED · lease · fencing| Worker[Python worker]
+  Worker --> Sources[6 независимых mock-адаптеров]
+  Worker --> Features[FinancialFeaturesProvider]
+  Features --> Native[Проверенный native LightGBM]
+  Worker --> Rules[Snapshot демо-правил]
+  Worker --> PG
+  API -->|опционально · три этапа проверки| Qwen[Qwen 2.5 1.5B / Ollama CPU]
 ```
+
+API принимает submit без долгой обработки. Job хранит submission, stage, attempts, run_after, lease_token/until и snapshot правил/источников. Worker фиксирует snapshot, завершает транзакцию, вызывает адаптер/ML, затем повторно проверяет fencing token и сохраняет результат. Истёкший RUNNING lease подхватывается; максимальное число попыток ограничено. API и worker используют один runtime-образ; отдельный heartbeat проверяется внутри worker-контейнера. Redis/Celery не требуются.
 
 ```mermaid
 stateDiagram-v2
   [*] --> draft
-  draft --> submitted: согласия + финансовые данные
-  needs_info --> submitted: уточнение и повторная отправка
-  submitted --> processing
-  processing --> pending: проверки сохранены
-  processing --> processing_error: источник недоступен / некорректен
-  processing_error --> processing: явный безопасный повтор
-  pending --> needs_info: аналитик запросил сведения
-  pending --> rejected: аналитик отказал
-  pending --> approved: аналитик создал предложение
-  approved --> offer_declined: клиент отклонил
-  approved --> offer_accepted: согласие с версией предложения
-  offer_accepted --> signed: ознакомление + SHA256 договора
-  signed --> disbursed: моделируемая выдача
-  rejected --> [*]
-  offer_declined --> [*]
-  disbursed --> [*]
+  draft --> submitted: согласия
+  needs_info --> submitted: обязательные задачи закрыты
+  submitted --> data_check
+  data_check --> enrichment
+  enrichment --> scoring
+  scoring --> decision
+  decision --> approved: auto / правила
+  decision --> counter_offer: auto / меньшая сумма
+  decision --> pending: специалист
+  decision --> rejected: стоп-фактор
+  data_check --> needs_info: нет документов
+  decision --> needs_info: нет сведений
+  enrichment --> processing_error: попытки исчерпаны
+  scoring --> processing_error: технический отказ
+  processing_error --> submitted: повтор
+  pending --> approved
+  pending --> counter_offer
+  pending --> needs_info
+  pending --> rejected
+  pending --> escalated
+  escalated --> approved: согласующий
+  escalated --> counter_offer
+  escalated --> rejected
+  escalated --> needs_info
+  escalated --> pending: вернуть аналитику
+  approved --> offer_accepted
+  counter_offer --> offer_accepted
+  approved --> offer_declined
+  counter_offer --> offer_declined
+  approved --> pending: отзыв предложения
+  counter_offer --> pending: отзыв предложения
+  offer_accepted --> signed: одноразовый код и hash
+  signed --> disbursed: mock-регистрация
+  draft --> cancelled
+  pending --> cancelled
 ```
 
-`submitted` и `processing` записываются в историю, локальная обработка заканчивается в
-той же транзакции. Падение процесса до commit откатывает весь незавершённый переход.
-Старые статусы сохранены, включая `completed` без заявления о реальной или новой демо-выдаче.
+Разрешённые переходы и дополнительные cancel-ветви проверяются в `services/pipeline.py`. Повторные accept/sign/disburse возвращают существующий результат. Истечение предложения проверяется сервером, не меняет задним числом условия; worker создаёт уведомления об истечении. Старые `processing`/`completed` сохранены для совместимости, completed без выдачи не создаёт LoanAccount.
 
-## Модель данных
+```mermaid
+erDiagram
+  Business ||--o{ User : employees
+  User ||--o{ AuthSession : sessions
+  Business ||--o{ LoanApplication : applications
+  LoanApplication ||--o{ ApplicationEvent : history
+  LoanApplication ||--o{ PipelineJob : submissions
+  LoanApplication ||--o{ ProcessingRun : assessment
+  LoanApplication ||--o{ ModelPrediction : technical_scores
+  Business ||--o| FinancialProfile : features
+  PolicyVersion ||--o{ DecisionRecord : rules
+  LoanApplication ||--o{ DecisionRecord : decisions
+  LoanApplication ||--o{ CreditOffer : versions
+  CreditOffer ||--o{ SigningChallenge : codes
+  CreditOffer ||--o| DemoContract : signature
+  LoanApplication ||--o| DemoDisbursement : issuance
+  LoanApplication ||--o| LoanAccount : schedule
+  LoanApplication ||--o{ ApplicationTask : tasks
+  LoanApplication ||--o{ ApplicationMessage : bank_chat
+  LoanApplication ||--o{ MessageRead : receipts
+  LoanApplication ||--o{ Notification : events
+  Business ||--o{ Document : pdf
+  LoanApplication ||--o{ ApplicationDocument : links
+  Document ||--o{ ApplicationDocument : reuse
+  Business ||--o{ TeamInvitation : invitations
+  User ||--o{ StreamLease : sse_limits
+  User ||--o{ AdminAudit : changes
+  SourceSetting ||--o{ PipelineJob : captured_modes
+```
 
-| Таблица | Связи и назначение |
-| --- | --- |
-| businesses / users | Организация, тип, ИНН; пользователь и существующая роль |
-| auth_sessions / auth_rate_limits | Хешированные токены и серверные лимиты |
-| loan_applications | FK организации/автора, финансы, статус, версия, сценарий mock |
-| application_events | FK заявки/инициатора; уникальны заявка + версия события |
-| documents | PDF bytes, SHA256, тип, результаты подписи, FK организации, исходной заявки |
-| application_documents | Многие-ко-многим: повторное использование PDF организации |
-| processing_runs | Неизменяемые снимки источников, demo risk, рекомендации; версия заявки |
-| scoring_results | Независимая история ML банкротства, версия и хеш артефакта |
-| credit_offers | Версия условий, сумма/срок/ставка/платёж, текст и SHA256 договора, согласие |
-| demo_contracts | Один offer_id, пользователь, ознакомление, время условной подписи |
-| demo_disbursements | Уникальны заявка и offer_id; сумма и время моделируемой выдачи |
-| assistant_conversations / assistant_turns | История по user_id, request_id, lease/revision |
+Связь SourceSetting→job на схеме логическая: режимы снимаются в snapshot/историю, FK нет. WorkerHeartbeat и SystemSetting — служебные записи. Договор, график и terms сохраняются неизменно; суммы графика — Decimal с округлением HALF_UP до копеек, JSON хранит десятичные строки.
 
-Владение проверяется по business_id из существующей сессии. Клиентский ownerId не доверенный.
-Документы черновиков скрыты от аналитика; после отправки доступны для рассмотрения.
-Переходы используют SELECT FOR UPDATE, затем UPDATE с проверкой версии и статуса.
-Уникальные ключи договора и выдачи служат дополнительной защитой. UI хранит подтверждённые
-данные только в памяти и восстанавливает их через API; legacy browser adapter оставлен для
-совместимости старых модульных тестов и не активируется в приложении.
-
-## Ограничения
-
-Правила и все источники синтетические. Заданные пользователем показатели — анкета,
-а не подтверждённая финансовая отчётность. ML банкротства отдельно от кредитной политики.
-Проверка подписи offline не подтверждает подлинность ФНС и отзыв сертификата.
-Рабочая очередь не нужна: все обязательные адаптеры локальные, обработка ограничена одной
-транзакцией. Для реальных долгих источников потребуется отдельная очередь и recovery worker.
+Все модели регистрируются общей metadata. Миграции main не изменены; новые ревизии a2026c002001/002002 добавляют таблицы/роли/поля. PostgreSQL upgrade проверяет сохранность старой учётной записи, сессии и черновика. Данные чужих организаций скрываются 404, права операции — 403, конфликт версии/статуса — 409.

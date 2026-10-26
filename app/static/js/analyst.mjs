@@ -5,11 +5,13 @@ import { heading, icon, badge, empty } from "./ui.mjs";
 let rows = [];
 let organizations = [];
 let loaded = false;
+let analystView="current";
 let error = "";
 const filters = { status: "pending", businessId: "", userId: "", query: "", sort: "newest" };
 
 export async function loadAnalyst() {
   const params = new URLSearchParams({ status: filters.status, sort: filters.sort });
+  if(analystView==="mine")params.set("mine","true");
   if (filters.businessId) params.set("business_id", filters.businessId);
   if (filters.userId) params.set("created_by_user_id", filters.userId);
   if (filters.query) params.set("query", filters.query);
@@ -19,6 +21,7 @@ export async function loadAnalyst() {
       apiRequest("/api/analyst/organizations"),
     ]);
     rows = await Promise.all(rows.map(async a => ({...a, workflow: await apiRequest(`/api/applications/${a.id}/workflow`)})));
+    if(rows.some(a=>a.version!==a.workflow.version))throw Error("Заявка изменилась во время загрузки. Обновите очередь.");
     loaded = true;
     error = "";
   } catch (err) {
@@ -43,14 +46,11 @@ export function analystPendingCount() {
   return rows.filter(a => a.status === "pending").length;
 }
 export function analyst(history = false) {
-  const status = history ? "all" : "pending";
-  // The surrounding page refresh requests the chosen status from the server.
-  if (filters.status !== status) filters.status = status;
   const business = organizations.find(o => String(o.id) === String(filters.businessId));
   const users = business?.users || [];
   const option = (value, label, active) => `<option value="${e(value)}" ${String(value) === String(active) ? "selected" : ""}>${e(label)}</option>`;
-  return `${heading(history ? "История решений" : "Заявки на рассмотрении",
-      "Заявки из PostgreSQL. Фильтруйте по организациям и авторам, открывайте и выносите решения.")}
+  return `${heading(({history:"История решений",mine:"Мои заявки",escalations:"Эскалации",current:"Заявки на рассмотрении"}[analystView]||"Очередь заявок"),
+      "Просматривайте проверки, документы и обращения клиентов.")}
     <div class="analyst-filters">
       <label>Организация<select data-analyst-filter="businessId">${option("", "Все компании", filters.businessId)}${organizations.map(o => option(o.id, o.name + " · " + o.inn + " (" + o.applications + ")", filters.businessId)).join("")}</select></label>
       <label>Автор заявки<select data-analyst-filter="userId" ${business ? "" : "disabled"}>${option("", "Все пользователи", filters.userId)}${users.map(u => option(u.id, u.email, filters.userId)).join("")}</select></label>
@@ -67,7 +67,7 @@ export function analyst(history = false) {
     <p class="footnote">Решения и документы сохранены на сервере. Оценка риска и выдача демонстрационные.</p>`;
 }
 export function analystRows(history = false) {
-  const list = rows.filter(a => history ? ["approved","rejected","needs_info","offer_accepted","offer_declined","signed","disbursed","completed","processing_error"].includes(a.status) : a.status === "pending");
+  const list = rows.filter(a => analystView === "mine" || analystView === "escalations" ? true : history ? ["approved","counter_offer","rejected","needs_info","offer_accepted","offer_declined","signed","disbursed","completed","processing_error","cancelled"].includes(a.status) : a.status === "pending");
   if (!list.length) return empty("Заявки не найдены", "Проверьте фильтры или дождитесь новых заявок.");
   return `<div class="review-list"><div class="review-table-head"><span>Заявка / дата</span><span>Организация</span><span>Продукт</span><span>Сумма</span><span>Статус</span><span></span></div>
     ${list.map(a => `<details class="review-row"><summary>
@@ -76,7 +76,7 @@ export function analystRows(history = false) {
     <span>${e(productById(a.productId).name)}<small>${a.months} мес.</small></span>
     <span class="nowrap">${money(a.amount)}</span><span>${badge(a.status)}</span>${icon("chevron")}
     </summary><div class="review-expanded"><div class="review-data"><section>
-      <h3>Организация и заявитель</h3><dl class="details compact">
+      <a class="button secondary" href="#/review/${e(a.id)}">Открыть рассмотрение</a><h3>Организация и заявитель</h3><dl class="details compact">
       <div><dt>Компания</dt><dd>${e(a.business?.name || "Не указана")}</dd></div>
       <div><dt>ИНН</dt><dd>${e(a.business?.inn || "—")}</dd></div>
       <div><dt>Автор</dt><dd>${e(a.creator?.email || "Не определён")}</dd></div>
@@ -90,8 +90,8 @@ export function analystRows(history = false) {
       </dl>${reviewEvidence(a)}
       </section><section>${history ? `<h3>Решение банка</h3>${badge(a.status)}<p>${e(a.comment || "Без комментария")}</p>
       ${a.alternativeAmount ? `<p>Альтернативная сумма: ${money(a.alternativeAmount)}</p>` : ""}
-      <p class="muted">${a.decidedAt ? date(a.decidedAt) : ""}</p>${a.status === "approved" && !a.workflow?.offers.length ? `<button type="button" class="button secondary" data-action="review-legacy-approval" data-id="${e(a.id)}">Запросить документы для прежнего одобрения</button>` : ""}` :
-      `<form class="decision-form form-stack" data-id="${e(a.id)}">
+      <p class="muted">${a.decidedAt ? date(a.decidedAt) : ""}</p>${a.status === "approved" && !a.workflow?.offers.length ? `<button type="button" class="button secondary" data-action="review-legacy-approval" data-id="${e(a.id)}" data-version="${a.workflow?.version??a.version}">Запросить документы для прежнего одобрения</button>` : ""}` :
+      `<form class="decision-form form-stack" data-id="${e(a.id)}" data-version="${a.workflow?.version??a.version}">
       <h3>Принять решение</h3><fieldset class="decision-options">
       <legend class="sr-only">Кредитное решение</legend>
       <label><input type="radio" name="status" value="approved" required> Одобрить</label>
@@ -114,4 +114,9 @@ function reviewEvidence(a) {
   const run = flow?.assessments.at(-1);
   const labels = {recommend_approval:"Рекомендуется одобрение", recommend_rejection:"Рекомендуется отказ", request_info:"Нужны уточнения", alternative_terms:"Предлагается снизить сумму", technical_error:"Техническая ошибка"};
   return `<h3>Проверки и демонстрационная оценка</h3>${run ? `<p><strong>${e(labels[run.policy.recommendation])}</strong></p><p>${run.policy.reasons.map(e).join(". ")}</p>${run.policy.alternative_amount ? `<p>Доступная демо-сумма: ${money(run.policy.alternative_amount)}</p>` : ""}<p class="footnote">${e(run.risk.disclaimer)}</p><ul>${run.checks.map(c => `<li>${e(c.source)}: ${e(c.status)} · ${date(c.received_at)}</li>`).join("")}</ul>` : '<p>Проверка будет выполнена перед решением по ранее отправленной заявке.</p>'}<h3>Документы</h3>${flow?.documents.map(d => `<button class="document-link" data-action="download-document" data-id="${e(d.id)}">${e(d.filename)} · ${e(d.signature.status)}</button>`).join("") || '<p class="muted">Документы не приложены.</p>'}<details><summary>История заявки</summary><ol>${flow?.history.filter(h => h.old_status !== h.new_status || h.reason !== "Данные заявки обновлены").map(h => `<li>${e(h.reason)} · ${date(h.created_at)}</li>`).join("") || ""}</ol></details>`;
+}
+
+export function setAnalystView(view){
+  analystView=view;
+  changeAnalystFilter("status",view==="history"||view==="mine"?"all":view==="escalations"?"escalated":"pending");
 }

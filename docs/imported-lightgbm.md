@@ -1,30 +1,14 @@
-# Imported LightGBM artifact
+# Импорт предоставленных весов
 
-User-supplied file: `LightGBM.joblib`. It was inspected without executing joblib
-deserialization. Embedded native LightGBM text was extracted and smoke-tested
-with `lightgbm.Booster` (450 trees, 24 features). No original joblib is loaded
-by the imported-model adapter.
+Native-веса уже включены: `artifacts/LightGBM_native.txt`. Подробные hash, схема, ограничения и проверенные результаты — в [model card](model-card.md). Извлечение воспроизводится только для известного исходного SHA:
 
-- Original SHA256: `1b9a0de1523b3c6bb64b269c960fafae169b570d9b056f3ea9198e63e3175f82`
-- Converted native model SHA256: `8f5b6d91d91873e2bf8df6c2a0e0a796f076faedddf8dc88e82d28ff5393d386`
-- Original metadata: sklearn 1.8.0; 3-fold CV; best CV PR-AUC 0.3468188047579757
-- Model: standard binary LightGBMClassifier, not the existing focal-loss artifact
-- Feature schema: see `ml/imported_lightgbm.py` (`FEATURE_NAMES`).
+```bash
+python -m scripts.extract_native_lightgbm --help
+python -m pytest -q tests/test_imported_model.py
+```
 
-To test offline, place the **converted native text model** at
-`artifacts/LightGBM_native.txt` and call `score_positive_class` with all 24
-correctly calculated financial features. The imported model is not a drop-in
-replacement for `artifacts/model_legal.joblib`.
+Конвертер читает сжатый joblib как данные, не вызывает `pickle.load`/`joblib.load`. Online worker использует `lightgbm.Booster(model_str=verified_text)` и проверяет hash до загрузки. Размер/порядок/имена признаков проверяются до инференса. Количество деревьев: 450; objective: binary.
 
-The uploaded artifact does **not** specify the meaning of the positive target,
-a decision threshold, or holdout metrics. It uses nonunit class weighting, so
-the emitted positive-class scores are not assumed calibrated. Never label them
-as credit PD, bankruptcy probability, or approval probability without additional
-verified provenance and validation.
+`GET /api/applications/{id}/ml` и workflow возвращают сохранённый технический score класса 1 с provenance. Доступ определяется организацией и ролью. Веса не заменяют отдельный legacy `/api/scoring/{id}` контракт банкротства: у импортированной модели неизвестны target mapping и порог.
 
-The existing server pipeline and `/api/scoring/{application_id}` are unchanged.
-They must not invent missing 2022 financial features from loan form amounts.
-To integrate online: verify the training label; obtain actual feature values
-with documented definitions and provenance; validate threshold/calibration;
-then adapt the scoring API and add end-to-end tests. Keep the demo credit policy
-independent of this model.
+Синтетические профили независимы от трёх финансовых полей формы. Управление профилем: `PUT /api/admin/businesses/{id}/financial-profile`, admin-only, kind `synthetic_stable`, `synthetic_stressed`, `missing` или `verified` с 24 признаками/источником/периодом. Для исходного обучения не подтверждены единицы, поэтому бизнес-интерпретация score запрещена независимо от выбранного профиля.

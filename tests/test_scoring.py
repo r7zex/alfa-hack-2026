@@ -72,64 +72,36 @@ def test_split_is_stratified_deterministic_and_disjoint():
     assert set.union(*sets) == set(x.index)
 
 
-@pytest.mark.parametrize("gamma", [0, 0.5, 3, 7])
-def test_focal_matches_finite_difference(gamma):
-    y = np.array([0, 1, 0, 1])
-    raw = np.array([-1.0, -0.3, 0.8, 1.2])
-    objective = legal.FocalObjective(gamma, 2.0)
-    def loss(z):
-        p = expit(z)
-        pt = np.where(y == 1, p, 1 - p)
-        return -np.where(y == 1, 2.0, 1.0) * (1 - pt)**gamma * np.log(pt)
-    step = 1e-4
-    grad, hess = objective(y, raw)
-    np.testing.assert_allclose(grad, (loss(raw + step) - loss(raw - step)) / (2 * step), rtol=1e-6)
-    numerical_hess = (loss(raw + step) - 2 * loss(raw) + loss(raw - step)) / step**2
-    np.testing.assert_allclose(hess, np.maximum(numerical_hess, 1e-4), rtol=1e-5)
-    assert np.all(objective(y, np.array([-1000, 1000, -1000, 1000]))[1] >= 1e-4)
-
-
-def test_predict_scores_applies_sigmoid_once():
-    class RawModel:
-        def predict(self, x, *, raw_score):
-            assert raw_score is True
-            return np.array([-2, 0, 2])
-        def predict_proba(self, x):
-            pytest.fail("custom objective must not use predict_proba")
-    np.testing.assert_allclose(legal.predict_scores(RawModel(), None), expit([-2, 0, 2]))
+def test_binary_probability_is_not_sigmoided_twice():
+    class BinaryModel:
+        def predict_proba(self,features):return np.array([[.8,.2],[.4,.6]])
+    np.testing.assert_allclose(legal.predict_scores(BinaryModel(),None),[.2,.6])
 
 
 def test_experiment_selection_uses_only_validation(monkeypatch):
     import lightgbm
-    x = pd.DataFrame({"x": np.arange(200, dtype=float)})
-    y = pd.Series([0, 0, 0, 1] * 50)
-    x_train, x_val, x_test, y_train, y_val, y_test = legal.split_data(x, y)
-    predictions, fitted = [], []
+    x=pd.DataFrame({'x':np.arange(200,dtype=float)});y=pd.Series([0,0,0,1]*50)
+    x_train,x_val,x_test,y_train,y_val,y_test=legal.split_data(x,y)
+    predictions=[];fitted=[]
     class SpyClassifier:
-        def __init__(self, objective, **params):
-            self.objective = objective
-            assert params == legal.PARAMS
-        def fit(self, features, target):
-            assert features.equals(x_train) and target.equals(y_train)
-            fitted.append(self)
-        def predict(self, features, raw_score):
-            predictions.append(set(features.index))
-            # Explicit fixture predictions are only for selection-isolation tests.
-            return np.sin(features.x.to_numpy() + self.objective.gamma)
-    monkeypatch.setattr(lightgbm, "LGBMClassifier", SpyClassifier)
-    original_threshold = legal.choose_threshold
-    def threshold(target, scores):
-        assert target.equals(y_val)
-        assert all(index == set(x_val.index) for index in predictions)
-        return original_threshold(target, scores)
-    monkeypatch.setattr(legal, "choose_threshold", threshold)
-    artifact = legal.fit_experiment(x, y)
-    assert len(fitted) == 15
-    assert [m.objective.gamma for m in fitted] == list(legal.GAMMAS)
-    assert artifact["pos_weight"] == np.sqrt((y_train == 0).sum() / (y_train == 1).sum())
-    assert {k: v["N"] for k, v in artifact["metrics"].items()} == {"Train": 139, "Validation": 31, "Test": 30}
-    assert predictions[-1] == set(x_test.index)
-    assert artifact["gamma"] == artifact["validation_comparison"][0]["gamma"]
+        def __init__(self,objective,**params):
+            assert objective=='binary';self.params={'objective':objective,**params}
+        def fit(self,features,target):
+            assert features.equals(x_train) and target.equals(y_train);fitted.append(self);return self
+        def predict_proba(self,features):
+            predictions.append(set(features.index));p=(np.sin(features.x.to_numpy())+1)/2
+            return np.column_stack([1-p,p])
+        def get_params(self):return self.params
+    monkeypatch.setattr(lightgbm,'LGBMClassifier',SpyClassifier)
+    original=legal.choose_threshold
+    def threshold(target,scores):
+        assert target.equals(y_val) and all(i==set(x_val.index) for i in predictions)
+        return original(target,scores)
+    monkeypatch.setattr(legal,'choose_threshold',threshold)
+    artifact=legal.fit_experiment(x,y)
+    assert len(fitted)==3 and artifact['objective']=={'name':'binary'} and artifact['positive_class']==1
+    assert predictions[-1]==set(x_test.index)
+    assert {k:v['N'] for k,v in artifact['metrics'].items()}=={'Train':139,'Validation':31,'Test':30}
 
 
 @pytest.fixture
@@ -139,11 +111,10 @@ def artifact_fixture():
     x = pd.DataFrame({"cash_ratio_2022": np.arange(80, dtype=float),
                       "revenue": np.arange(80, dtype=float)**2})
     y = pd.Series(([0] * 3 + [1]) * 20)
-    model = LGBMClassifier(objective=legal.FocalObjective(1.0, 2.0), n_estimators=3,
+    model = LGBMClassifier(objective="binary", n_estimators=3,
                            min_child_samples=2, n_jobs=1, verbosity=-1).fit(x, y)
-    a = dict(format_version=1, model_type="legal", model=model, feature_names=list(x),
-             gamma=1.0, threshold=0.5, objective={"name": "focal", "gamma": 1.0,
-                    "pos_weight": 2.0, "hessian_floor": 1e-4, "raw_score_sigmoid": True})
+    a = dict(format_version=legal.FORMAT_VERSION,model_type='legal',model=model,feature_names=list(x),
+             threshold=.5,objective={'name':'binary'},positive_class=1,target='bankrupt')
     return a, x.head(4)
 
 

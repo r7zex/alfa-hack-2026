@@ -124,6 +124,7 @@ async def send_message(
     payload: AssistantMessageRequest,
     settings: Settings,
     client: QwenClient,
+    application_context: dict | None = None,
 ):
     if not settings.assistant_available:
         raise HTTPException(503, "ИИ-ассистент пока не настроен. Повторите позже.")
@@ -246,7 +247,7 @@ async def send_message(
     await db.commit()  # Release the DB connection before waiting for the model.
     try:
         async with asyncio.timeout(settings.assistant_timeout_seconds):
-            reply = await credit_reply(client, payload.message, history, business_type)
+            reply = await credit_reply(client, payload.message, history, business_type, application_context)
     except (QwenUnavailable, TimeoutError, asyncio.CancelledError) as exc:
         released = await db.execute(
             update(AssistantConversation)

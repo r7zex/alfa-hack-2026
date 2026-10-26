@@ -47,7 +47,7 @@ def test_analyst_can_filter_by_business_and_decide_once(auth_env):
                           json={"status": "approved"}, headers={}).status_code == 403
         decision = admin.post(
             "/api/analyst/applications/" + first_id + "/decision",
-            json={"status": "approved", "comment": "Демо-одобрение", "alternativeAmount": 900000},
+            json={"status": "approved", "expectedVersion": listing.json()[0]["version"], "comment": "Демо-одобрение", "alternativeAmount": 900000},
             headers=csrf(admin),
         )
         assert decision.status_code == 200, decision.text
@@ -56,7 +56,7 @@ def test_analyst_can_filter_by_business_and_decide_once(auth_env):
         assert decision.json()["decidedByUserId"] is not None
         assert admin.post(
             "/api/analyst/applications/" + first_id + "/decision",
-            json={"status": "rejected", "comment": "Повторно"},
+            json={"status": "rejected", "expectedVersion": listing.json()[0]["version"], "comment": "Повторно"},
             headers=csrf(admin),
         ).status_code == 409
         my_row = first.get("/api/applications/" + first_id).json()
@@ -70,7 +70,7 @@ def test_analyst_can_filter_by_business_and_decide_once(auth_env):
         ).status_code == 422
         assert admin.post(
             "/api/analyst/applications/" + second_id + "/decision",
-            json={"status": "rejected", "comment": "Недостаточно данных"},
+            json={"status": "rejected", "expectedVersion": admin.get("/api/analyst/applications/"+second_id).json()["version"], "comment": "Недостаточно данных"},
             headers=csrf(admin),
         ).status_code == 200
 
@@ -89,4 +89,4 @@ def test_analyst_does_not_read_drafts(auth_env):
         assert admin.get("/api/analyst/applications", params={"status": "all"}).json() == []
         assert admin.get("/api/analyst/applications/" + aid).status_code == 404
         assert admin.post("/api/analyst/applications/" + aid + "/decision",
-                          json={"status": "approved"}, headers=csrf(admin)).status_code == 404
+                          json={"status": "approved", "expectedVersion":0}, headers=csrf(admin)).status_code == 404

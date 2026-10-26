@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from hashlib import sha256
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,11 @@ def load_native_model(path: Path = DEFAULT_ARTIFACT) -> lgb.Booster:
         raise ImportedModelError("Native LightGBM artifact is missing") from exc
     if sha256(content).hexdigest() != ARTIFACT_SHA256:
         raise ImportedModelError("Unexpected native LightGBM model SHA256")
+    return _parse_native(content)
+
+
+@lru_cache(maxsize=2)
+def _parse_native(content: bytes) -> lgb.Booster:
     try:
         model = lgb.Booster(model_str=content.decode("utf-8"))
     except (UnicodeError, ValueError, RuntimeError) as exc:
@@ -74,11 +80,15 @@ def validate_features(data: Any) -> pd.DataFrame:
             raise ValueError(
                 f"Feature names mismatch: missing={sorted(missing)}, extra={sorted(extra)}"
             )
+        if any(isinstance(v, (str, bool)) for v in frame.to_numpy().ravel() if v is not None):
+            raise ValueError("Features must be numeric, not strings or booleans")
         frame = frame.loc[:, FEATURE_NAMES].apply(
             pd.to_numeric, errors="raise"
         ).astype(float)
         if np.isinf(frame.to_numpy()).any() or frame.isna().all(axis=1).any():
             raise ValueError("Features contain infinity or an all-missing row")
+        if ((frame["business_age"] < 0) | (frame["business_age"] > 200)).any() or not frame["simplified"].isin([0, 1, np.nan]).all():
+            raise ValueError("Invalid business_age or simplified flag")
         return frame
     except (ValueError, TypeError, OverflowError) as exc:
         raise ImportedModelError(str(exc)) from exc
@@ -103,4 +113,18 @@ def score_positive_class(data: Any, path: Path = DEFAULT_ARTIFACT) -> dict:
         "threshold": None,
         "classification": None,
         "calibrated": False,
+        "contributions": contributions(model, frame, scores),
     }
+
+
+def contributions(model, frame, scores):
+    values = np.asarray(model.predict(frame, pred_contrib=True, num_threads=1))
+    raw = np.asarray(model.predict(frame, raw_score=True, num_threads=1))
+    if values.shape != (len(frame), len(FEATURE_NAMES) + 1) or not np.isfinite(values).all():
+        raise ImportedModelError("Invalid native feature contributions")
+    from scipy.special import expit
+    if not np.allclose(values.sum(axis=1), raw, atol=1e-7) or not np.allclose(expit(raw), scores, atol=1e-7):
+        raise ImportedModelError("Feature contributions do not reconcile with prediction")
+    return [dict(base_value=float(row[-1]), raw_score=float(raw[i]),
+                 unit="raw_log_odds_class_1", values={name:float(row[j]) for j,name in enumerate(FEATURE_NAMES)})
+            for i,row in enumerate(values)]

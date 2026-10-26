@@ -28,6 +28,18 @@ class Settings(BaseSettings):
     demo_auth_enabled: bool = False
     auth_requests_per_minute: int = Field(default=30, ge=1, le=1000)
     auth_email_requests_per_minute: int = Field(default=10, ge=1, le=1000)
+    pipeline_async_enabled: bool = True
+    worker_poll_seconds: float = Field(default=0.5, ge=0.05, le=30)
+    worker_lease_seconds: int = Field(default=60, ge=10, le=600)
+    worker_max_attempts: int = Field(default=3, ge=1, le=10)
+    worker_backoff_seconds: float = Field(default=1, ge=0, le=30)
+    pipeline_step_delay_seconds: float = Field(default=0, ge=0, le=5)
+    integration_timeout_seconds: float = Field(default=2, ge=0.1, le=30)
+    signing_require_code: bool = True
+    demo_signing_code_visible: bool = False
+    signing_code_ttl_seconds: int = Field(default=180, ge=10, le=900)
+    signing_code_max_attempts: int = Field(default=5, ge=1, le=10)
+    signing_code_secret: SecretStr = SecretStr("")
     qwen_base_url: str = "http://127.0.0.1:11434/v1"
     qwen_api_key: SecretStr = SecretStr("")
     qwen_model: str = Field(default="qwen2.5:1.5b", min_length=1, max_length=120)

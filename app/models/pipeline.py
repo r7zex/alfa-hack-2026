@@ -1,7 +1,7 @@
 """Auditable demo credit workflow. Monetary values are whole roubles."""
 from datetime import datetime
 from uuid import UUID, uuid4
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, Uuid, func
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
@@ -40,8 +40,11 @@ class CreditOffer(Base):
     version: Mapped[int] = mapped_column(Integer)
     amount: Mapped[int] = mapped_column(Integer)
     months: Mapped[int] = mapped_column(Integer)
-    annual_rate: Mapped[int] = mapped_column(Integer)
-    monthly_payment: Mapped[int] = mapped_column(Integer)
+    product_id: Mapped[str | None] = mapped_column(String(40))
+    reason: Mapped[str | None] = mapped_column(Text)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    annual_rate: Mapped[float] = mapped_column(Numeric(5, 2))
+    monthly_payment: Mapped[float] = mapped_column(Numeric(14, 2))
     repayment_mode: Mapped[str] = mapped_column(String(30))
     principal_due: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default='offered')

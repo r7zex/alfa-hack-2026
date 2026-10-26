@@ -2,10 +2,16 @@
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from uuid import uuid4
+from time import monotonic
+import json
+import logging
 
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+
+logging.basicConfig(level=logging.INFO,format="%(message)s")
 
 from app.db.session import engine
 from app.api.applications import router as applications_router
@@ -31,7 +37,14 @@ app.include_router(auth_router)
 
 @app.middleware("http")
 async def private_api_responses(request, call_next):
+    started=monotonic()
+    supplied=request.headers.get('x-request-id','')
+    request_id=supplied if len(supplied)<=64 and supplied.replace('-','').isalnum() else str(uuid4())
     response = await call_next(request)
+    response.headers['X-Request-ID']=request_id
+    logging.getLogger('requests').info(json.dumps({'event':'http_request','request_id':request_id,
+        'method':request.method,'path':request.url.path,'status':response.status_code,
+        'duration_ms':round((monotonic()-started)*1000,2)}))
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -57,8 +70,12 @@ async def ready() -> dict[str, str]:
     return {"status": "ready", "database": "connected"}
 
 
-from app.api import analyst, documents, scoring, assistant, pipeline
+from app.api import analyst, documents, scoring, assistant, pipeline, operations, analytics, live, demo
 
+app.include_router(demo.router)
+app.include_router(operations.router)
+app.include_router(analytics.router)
+app.include_router(live.router)
 app.include_router(analyst.router)
 app.include_router(documents.router)
 app.include_router(scoring.router)

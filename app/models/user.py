@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 class UserRole(str, Enum):
     ADMIN = "admin"
     CLIENT = "client"
+    UNDERWRITER = "underwriter"
+    APPROVER = "approver"
 
 
 class User(Base):
@@ -28,6 +30,7 @@ class User(Base):
         Boolean, default=False, server_default=false()
     )
 
+    can_sign: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     email: Mapped[str] = mapped_column(
         String(255),
         unique=True,
@@ -40,7 +43,7 @@ class User(Base):
     )
 
     role: Mapped[UserRole] = mapped_column(
-        SQLEnum(UserRole),
+        SQLEnum(UserRole, length=32),
         default=UserRole.CLIENT,
         nullable=False,
     )

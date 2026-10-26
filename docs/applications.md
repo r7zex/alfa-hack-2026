@@ -9,7 +9,7 @@ Application endpoints now use cookie-based authentication through `require_clien
 - The legacy `owner_id` is kept as a nullable transition column. The migration backfills records previously keyed `user-<id>` using the existing users table. Previously unclaimed `demo-ip`/`demo-llc` drafts are assigned to their matching demo business on authenticated access; they are not made accessible to ordinary accounts.
 - There is no supported unauthenticated `X-Demo-User-Id` access.
 - `python -m app.db.init` (or `python -m alembic upgrade head`) applies versioned migrations; do not use `create_all` for production schema changes.
-- Client documents and the analyst workspace are still separate demo/browser-storage functionality; this change does not implement server-side document upload, scoring or administrator decisions.
+- Documents, tasks, chat, notifications, decisions, model results, offers and schedules now persist in PostgreSQL. Submit enqueues a durable job and returns submitted; the worker runs asynchronously. See [product-operations.md](product-operations.md) and [design.md](design.md).
 
 ## Development verification
 

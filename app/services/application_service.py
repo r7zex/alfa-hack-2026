@@ -70,10 +70,10 @@ class ApplicationService:
         await self.attach(row, payload.document_ids)
         return await self.repo.save(row)
 
-    async def submit(self, application_id, business_id, user_id=None, consent=None):
+    async def submit(self, application_id, business_id, user_id=None, consent=None, settings=None):
         row = await self.get(application_id, business_id)
         if row.status not in EDITABLE:
-            if row.status in {'pending', 'processing', 'submitted', 'approved', 'rejected', 'offer_accepted', 'signed', 'disbursed', 'offer_declined', 'processing_error', 'completed'}:
+            if row.status in {'pending', 'processing', 'submitted', 'approved', 'rejected', 'offer_accepted', 'signed', 'disbursed', 'offer_declined', 'processing_error', 'completed', 'data_check', 'enrichment', 'scoring', 'decision', 'counter_offer', 'escalated', 'cancelled'}:
                 return row
             raise HTTPException(409, 'Application cannot be submitted')
         check_terms(row.product_id, row.amount, row.months)
@@ -83,7 +83,14 @@ class ApplicationService:
             raise HTTPException(422, 'Financial information is incomplete')
         if consent is None or not consent.demo_data or not consent.demo_checks:
             raise HTTPException(422, 'Подтвердите синтетические данные и согласие на демонстрационные проверки')
+        from app.models.operations import ApplicationTask
+        open_task = await self.repo.session.scalar(select(ApplicationTask.id).where(ApplicationTask.application_id==row.id,ApplicationTask.status=='OPEN',ApplicationTask.required.is_(True)).limit(1))
+        if open_task:raise HTTPException(409, 'Сначала выполните обязательные задачи банка')
         await event(self.repo.session, row, user_id, 'submitted', 'Заявка отправлена', consent.model_dump())
+        if settings is not None and settings.pipeline_async_enabled:
+            from app.services.jobs import enqueue
+            await enqueue(self.repo.session,row)
+            return await self.repo.save(row)
         await event(self.repo.session, row, None, 'processing', 'Начаты демонстрационные проверки')
         await process(self.repo.session, row)
         return await self.repo.save(row)

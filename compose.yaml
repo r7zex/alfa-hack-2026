@@ -17,6 +17,7 @@ services:
       start_period: 5s
 
   app:
+    image: ${DELORA_IMAGE:-delora-credit:local}
     build:
       context: .
     restart: unless-stopped
@@ -36,6 +37,26 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  worker:
+    image: ${DELORA_IMAGE:-delora-credit:local}
+    pull_policy: never
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    env_file:
+      - ${APP_ENV_FILE:-.env}
+    environment:
+      DB_HOST: db
+      DB_PORT: '5432'
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker", "--health"]
+      interval: 15s
+      timeout: 8s
+      retries: 3
+      start_period: 20s
 
 volumes:
   postgres_data:

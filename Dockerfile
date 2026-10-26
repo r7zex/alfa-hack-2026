@@ -14,12 +14,7 @@ RUN --mount=type=secret,id=proxy_ca \
     python -m pip install --no-cache-dir -r requirements.txt -r requirements-ml.txt \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
 
-COPY --chown=appuser:appuser app ./app
-COPY --chown=appuser:appuser alembic.ini ./
-COPY --chown=appuser:appuser alembic ./alembic
-COPY --chown=appuser:appuser ml ./ml
-COPY --chown=appuser:appuser artifacts ./artifacts
-COPY --chown=appuser:appuser data ./data
+COPY --chown=appuser:appuser . .
 
 USER appuser
 

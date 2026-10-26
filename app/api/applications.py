@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import require_client
+from app.dependencies import require_client, Config
 from app.models.auth import User
 from app.schemas.loan_application import ApplicationCreate, ApplicationRead, ApplicationUpdate
 from app.services.application_service import ApplicationService
@@ -67,7 +67,7 @@ async def update_application(application_id: UUID, body: ApplicationUpdate, db: 
 
 
 @router.post("/{application_id}/submit", response_model=ApplicationRead, response_model_by_alias=True)
-async def submit_application(application_id: UUID, db: Session, user: Client, body: SubmitConsent | None = Body(default=None)):
+async def submit_application(application_id: UUID, db: Session, user: Client, settings: Config, body: SubmitConsent | None = Body(default=None)):
     business_id = get_business_id(user)
     await claim_drafts(db, user)
-    return await ApplicationService(db).submit(application_id, business_id, user.id, body)
+    return await ApplicationService(db).submit(application_id, business_id, user.id, body, settings)

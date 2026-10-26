@@ -59,9 +59,8 @@ Debian base image and libgomp1 (their included Debian copyright notices; libgomp
 GCC runtime GPLv3 with GCC Runtime Library Exception). Docker images retain upstream notices.
 
 The optional Qwen service and model weights are not bundled, downloaded or licensed by this
-repository. qwen3.8:27b is a configurable requested identifier, not a claim that this exact
-model exists at a provider. Review the actual selected provider/model license before use.
-No trained LightGBM weights or external training datasets are distributed by this integration.
+repository. qwen2.5:1.5b is the default requested identifier. Real CPU inference was verified; availability of other model IDs must be checked with the provider. Review the actual selected provider/model license before use.
+The supplied native LightGBM weights are included with recorded provenance; external training datasets are not distributed.
 The deterministic mock records and generated test PDFs are synthetic project fixtures.
 
 Existing artwork in app/static/images is supplied with the original project; its provenance
@@ -73,3 +72,9 @@ recorded in docs/integration-audit.md; no claim of third-party authorship is mad
 Development-only Playwright/Chromium was used for UI verification; it is not included in the
 application container. Playwright is Apache-2.0; Chromium has BSD-style and bundled component
 licenses. Existing vendored .agents/skills packages keep their supplied LICENSE/NOTICE files.
+
+DELORA FINAL additions (2026-10-26)
+- User-supplied LightGBM.joblib: source SHA256 1b9a0de1523b3c6bb64b269c960fafae169b570d9b056f3ea9198e63e3175f82; passive conversion to native weights. No license grant beyond the supplied artifact is inferred. Provenance/limitations: docs/model-card.md.
+- EnsixD/alfa-smart-credit-cabinet main 1a22e191868e106290758274540630a76543f3eb was read for functional comparison only. No root LICENSE was found through the repository API. No source, images or styles from that repository were copied.
+- Optional Qwen2.5-1.5B weights are downloaded by explicit operator action through Ollama; not embedded in this repository or main image. Review upstream model license before redistribution.
+- Playwright/Chromium and Ruff are development verification tools; Playwright and Ruff: Apache-2.0/MIT respectively, Chromium third-party notices apply to its downloaded runtime.

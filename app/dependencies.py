@@ -81,3 +81,17 @@ async def require_client(auth: Auth) -> User:
     if auth.user.role != UserRole.CLIENT:
         raise HTTPException(403, "Доступ только для клиента")
     return auth.user
+
+BANK_ROLES = {UserRole.ADMIN, UserRole.UNDERWRITER, UserRole.APPROVER}
+
+
+async def require_bank(auth: Auth) -> User:
+    if auth.user.role not in BANK_ROLES:
+        raise HTTPException(403, 'Доступ только для банковского сотрудника')
+    return auth.user
+
+
+async def require_signer(auth: Auth) -> User:
+    if auth.user.role != UserRole.CLIENT or not auth.user.can_sign or not auth.user.business_id:
+        raise HTTPException(403, 'Операция доступна уполномоченному подписанту')
+    return auth.user
