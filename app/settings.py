@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     auth_email_requests_per_minute: int = Field(default=10, ge=1, le=1000)
     qwen_base_url: str = "http://127.0.0.1:11434/v1"
     qwen_api_key: SecretStr = SecretStr("")
-    qwen_model: str = Field(default="qwen3.8:27b", min_length=1, max_length=120)
+    qwen_model: str = Field(default="qwen2.5:1.5b", min_length=1, max_length=120)
     qwen_reasoning_effort: Literal["auto", "none", "omit"] = "auto"
     qwen_require_api_key: bool = False
     assistant_enabled: bool = True

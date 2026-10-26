@@ -2,9 +2,8 @@
 
 Перенесено из `feat/AI-assistant` в `feat/integrated-credit-pipeline`. Страница: `/#/assistant`.
 Ассистент использует конфигурируемый OpenAI-compatible endpoint. Основное приложение
-работает с `ASSISTANT_ENABLED=false`, без Qwen и скачивания весов. Запрошенный default
-`qwen3.8:27b` сохранён, но существование точного ID и доступность нужно проверять у
-выбранного провайдера через `/v1/models`. Локальный endpoint в проверенной среде
+работает с `ASSISTANT_ENABLED=false`, без Qwen и скачивания весов. Модель по умолчанию: `qwen2.5:1.5b` (официальный тег Ollama). Для другого
+провайдера проверьте поддержку точного ID через `/v1/models`. Локальный endpoint в проверенной среде
 недоступен; реальный inference не выполнялся. Тесты транспорта и политик используют mock.
 
 ## Запуск всего проекта с локальным Qwen
@@ -14,7 +13,7 @@
 
 ```dotenv
 QWEN_BASE_URL=http://127.0.0.1:11434/v1
-QWEN_MODEL=qwen3.8:27b
+QWEN_MODEL=qwen2.5:1.5b
 QWEN_REASONING_EFFORT=auto
 QWEN_REQUIRE_API_KEY=false
 ASSISTANT_ENABLED=true
@@ -51,7 +50,7 @@ docker compose -f compose.yaml -f compose.qwen.yaml down
 Нужны зависимости проекта и настроенный `.env`.
 
 ```bash
-ollama pull qwen3.8:27b
+ollama pull qwen2.5:1.5b
 python -m alembic upgrade head
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
@@ -68,14 +67,9 @@ URL на `http://qwen:11434/v1`.
 `POST /chat/completions` с `response_format: {"type":"json_object"}`.
 Адрес и название модели нельзя передать из браузера.
 
-`QWEN_REASONING_EFFORT=auto` автоматически добавляет `reasoning_effort: "none"`
-для тегов Ollama `qwen3.8` и `qwen3.8:27b`, включая namespace `library/`.
-Это отключает thinking для классификации, генерации и проверки ответа,
-чтобы бюджет вывода использовался для финального JSON. Поле reasoning_content
-пользователю не показывается и не сохраняется в истории.
-Для других алиасов можно установить `QWEN_REASONING_EFFORT=none`, а для
-провайдера без поддержки параметра `QWEN_REASONING_EFFORT=omit`.
-В режиме auto старые модели Qwen 2.5 получают прежний набор параметров.
+`QWEN_REASONING_EFFORT=auto` не передаёт параметр `reasoning_effort` для Qwen 2.5.
+Если провайдер не поддерживает его, оставьте `auto` или установите `omit`.
+История и ответы не включают внутренние reasoning-токены.
 Платные провайдеры не используются по умолчанию.
 
 ## Границы темы и данные
@@ -154,5 +148,5 @@ python -m scripts.check_qwen
 Источники интерфейса и модели:
 
 - https://docs.ollama.com/api/openai-compatibility
-- https://ollama.com/library/qwen3.8:27b
-- https://github.com/QwenLM/Qwen3.8
+- https://ollama.com/library/qwen2.5:1.5b
+- https://github.com/QwenLM/Qwen2.5

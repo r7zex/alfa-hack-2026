@@ -376,10 +376,10 @@ def test_openai_transport_validates_json_and_never_uses_tools():
     result = asyncio.run(model.complete("Return JSON", {"question": "Кредит"}, Verdict))
     assert result.decision == "credit"
     body = json.loads(requests[0].content)
-    assert body["model"] == "qwen3.8:27b" and body["response_format"] == {
+    assert body["model"] == "qwen2.5:1.5b" and body["response_format"] == {
         "type": "json_object"
     }
-    assert body["reasoning_effort"] == "none"
+    assert "reasoning_effort" not in body
     assert "tools" not in body and "history" not in body
     assert requests[0].headers["authorization"] == "Bearer secret-test-key"
     assert str(requests[0].url).endswith("/v1/chat/completions")
@@ -562,8 +562,8 @@ def test_api_uses_real_qwen_adapter_for_all_three_checks(chat_env):
             == "Кредит на оборудование доступен в учебном каталоге."
         )
         assert len(requests) == 3
-        assert all(request["model"] == "qwen3.8:27b" for request in requests)
-        assert all(request["reasoning_effort"] == "none" for request in requests)
+        assert all(request["model"] == "qwen2.5:1.5b" for request in requests)
+        assert all("reasoning_effort" not in request for request in requests)
         assert "demo_catalogue" in json.loads(requests[1]["messages"][1]["content"])
         assert "proposed_answer" in json.loads(requests[2]["messages"][1]["content"])
 
@@ -573,7 +573,7 @@ def test_api_uses_real_qwen_adapter_for_all_three_checks(chat_env):
     [
         ("qwen3.8:27b", "auto", "none"),
         ("qwen3.8", "auto", "none"),
-        ("library/qwen3.8:27b", "auto", "none"),
+        ("library/qwen2.5:1.5b", "auto", "none"),
         ("qwen2.5:7b", "auto", None),
         ("qwen2.5:1.5b", "auto", None),
         ("custom-alias", "none", "none"),
