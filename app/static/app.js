@@ -138,7 +138,7 @@ function render() {
     if (section === "assistant") mountAssistant(user.id);
     if(extraSections.includes(section) && section!=="documents" && needsOperationsLoad(section,parts[1]||"")) {
       const key=location.hash;
-      loadOperations(section,parts[1]||"").then(()=>{if(location.hash===key)render();});
+      loadOperations(section,parts[1]||"").then(()=>{if(location.hash===key)renderAfterRefresh();});
     }
     connectLive(section==="applications"?parts[1]:null);
     showStorageNotice();
@@ -146,7 +146,7 @@ function render() {
       "Делора - " +
       {
         home: "Главная",
-        loans:"Мои кредиты",documents:"Документы",messages:"Сообщения",notifications:"Уведомления",team:"Команда",analytics:"Аналитика",integrations:"Интеграции",settings:"Правила",review:"Рассмотрение",mine:"Мои заявки",escalations:"Эскалации",
+        loans:"Мои кредиты",documents:"Документы",messages:"Сообщения",notifications:"Уведомления",team:"Команда",analytics:"Аналитика",integrations:"Интеграции",settings:"Правила",audit:"Аудит",review:"Рассмотрение",mine:"Мои заявки",escalations:"Эскалации",
         products: "Подбор кредита",
         applications: "Мои заявки",
         profile: "Личный кабинет",
@@ -162,17 +162,26 @@ function render() {
     toast(error.message, true);
   }
 }
+function renderAfterRefresh(){
+  const focused=document.activeElement;
+  if(session()&&focused?.closest('form')&&['INPUT','TEXTAREA','SELECT'].includes(focused.tagName))return;
+  render();
+}
 function navigate(to) {
   if (location.hash === "#/" + to) render();
   else location.hash = "/" + to;
 }
 function enter(user) {
-  navigate(user.role === "admin" ? "current" : "home");
-  if (user.role === "admin") {
+  const bank=["admin","underwriter","approver"].includes(user.role);
+  const destination=bank?"current":"home",changed=location.hash!=="#/"+destination;
+  navigate(destination);
+  render();
+  if(changed)return; // The hash handler restores data once, after showing the cabinet.
+  if (bank) {
     setAnalystView(route().parts[0]);
-    loadAnalyst().then(render).catch(error => toast(`Заявки аналитика недоступны: ${error.message}`, true));
+    loadAnalyst().then(renderAfterRefresh).catch(error => toast(`Заявки аналитика недоступны: ${error.message}`, true));
   }
-  else restoreServerApplications().then(render).catch(error => toast(`Серверные заявки недоступны: ${error.message}`, true));
+  else restoreServerApplications().then(renderAfterRefresh).catch(error => toast(`Серверные заявки недоступны: ${error.message}`, true));
 }
 async function download(id) {
   const doc = getState().documents.find((d) => d.id === id);
@@ -382,7 +391,7 @@ document.addEventListener("change", async (event) => {
       getWizard().values.documentIds.push(doc.id);
       if(getWizard().step===2)renderWizard();
       scheduleWizardAutoSave();
-    } else {await restoreServerApplications();invalidateOperations();render();}
+    } else {await restoreServerApplications();invalidateOperations();renderAfterRefresh();}
     toast("Документ сохранён на сервере");
   } catch (error) {
     toast(error.message, true);
@@ -393,11 +402,13 @@ document.addEventListener("change", async (event) => {
 window.addEventListener("delora:refresh", render);
 window.addEventListener("hashchange", () => {
   connectLive(null);
+  render();
   if (session()?.id === "admin") {
+    if(!["current","mine","escalations","history"].includes(route().parts[0]))return;
     setAnalystView(route().parts[0]);
-    loadAnalyst().then(render).catch(error => toast(error.message, true));
-  } else if (session()?.id) {
-    restoreServerApplications().then(render).catch(error => toast(error.message, true));
+    loadAnalyst().then(renderAfterRefresh).catch(error => toast(error.message, true));
+  } else if (session()?.id&&["home","applications"].includes(route().parts[0])) {
+    restoreServerApplications().then(renderAfterRefresh).catch(error => toast(error.message, true));
   } else render();
   if (!route().params.has("documents")) window.scrollTo({ top: 0 });
 });
@@ -410,11 +421,12 @@ window.addEventListener("storage", (event) => {
 Promise.all([restoreAuth(), loadProducts()]).then(async () => {
   render();
   if (session()?.id === "admin") {
+    if(!["current","mine","escalations","history"].includes(route().parts[0]))return;
     setAnalystView(route().parts[0]);
-    try { await loadAnalyst(); render(); }
+    try { await loadAnalyst(); renderAfterRefresh(); }
     catch (error) { toast(`Заявки аналитика недоступны: ${error.message}`, true); }
   } else if (session()?.id) {
-    try { await restoreServerApplications(); render(); }
+    try { await restoreServerApplications(); renderAfterRefresh(); }
     catch (error) { toast(`Серверные заявки недоступны: ${error.message}`, true); }
   }
 }).catch((error) => {
@@ -437,7 +449,7 @@ function connectLive(id){
 async function refreshOperations(force=true){
   if(force)invalidateOperations();
   if(session()?.id&&session()?.id!=="admin")await restoreServerApplications();
-  render();
+  renderAfterRefresh();
 }
 installOperations(refreshOperations);
 window.addEventListener("delora:error",event=>toast(event.detail,true));
@@ -448,7 +460,7 @@ setInterval(async()=>{
     if(document.activeElement?.closest("form")||document.getElementById("modal"))return;
     const section=route().parts[0];
     if(["notifications","messages","review","integrations","analytics"].includes(section)){invalidateOperations();render();}
-    else if(session()?.id==="admin"&&["current","mine","escalations","history"].includes(section)){await loadAnalyst();render();}
-    else if(ownApplications().some(a=>["submitted","data_check","enrichment","scoring","decision","processing"].includes(a.status))){await restoreServerApplications();render();}
+    else if(session()?.id==="admin"&&["current","mine","escalations","history"].includes(section)){await loadAnalyst();renderAfterRefresh();}
+    else if(ownApplications().some(a=>["submitted","data_check","enrichment","scoring","decision","processing"].includes(a.status))){await restoreServerApplications();renderAfterRefresh();}
   }catch{/* Manual refresh and EventSource reconnection remain available. */}
 },5000);
